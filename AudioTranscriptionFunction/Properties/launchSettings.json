@@ -2,8 +2,7 @@
   "profiles": {
     "AudioTranscriptionFunction": {
       "commandName": "Project",
-      "commandLineArgs": "--port 7206",
-      "launchBrowser": false
+      "commandLineArgs": "--port 7206 --verbose"
     }
   }
 }
