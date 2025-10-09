@@ -1,13 +1,9 @@
-using System;
-using System.Linq;
-using System.Net.Http;
-using System.Text;
-using System.Text.Json;
-using System.Threading.Tasks;
 using Azure.Storage.Blobs;
-using Azure.Storage.Queues; // added for re-enqueue
+using Azure.Storage.Queues;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using System.Text;
+using System.Text.Json;
 
 namespace AudioTranscriptionFunction
 {
@@ -45,9 +41,12 @@ namespace AudioTranscriptionFunction
         /// <exception cref="InvalidOperationException">Thrown for unrecoverable problems (e.g. bad payload, exceeded attempts).</exception>
         /// <remarks>Retry semantics are controlled by throwing; the Azure Functions runtime will handle retries / poison routing.</remarks>
         [Function(nameof(BatchTranscriptionPoller))]
-        public async Task Run([QueueTrigger("transcription-jobs", Connection = "AzureWebJobsStorage")] string message)
+        public async Task Run([QueueTrigger("transcription-jobs", Connection = "AzureWebJobsStorage")] string? message)
         {
-            _logger.LogInformation("[Poller] Start raw length={Len} snippet='{Snippet}'", message?.Length, Truncate(message, 150));
+            // Normalize null to empty to avoid null reference warnings downstream.
+            message ??= string.Empty;
+
+            _logger.LogInformation("[Poller] Start raw length={Len} snippet='{Snippet}'", message.Length, Truncate(message, 150));
 
             if (!string.IsNullOrWhiteSpace(message) && IsLikelyBase64(message))
             {
@@ -98,22 +97,24 @@ namespace AudioTranscriptionFunction
                 { _logger.LogWarning("[Poller {JobId}] Could not parse job JSON; retrying", payload.JobId); ThrowRetry(payload, "Parse job JSON"); return; }
 
                 if (!root.TryGetProperty("status", out var statusProp) || statusProp.ValueKind != JsonValueKind.String)
-                { _logger.LogWarning("[Poller {JobId}] Missing status property; retrying", payload.JobId); ThrowRetry(payload, "Missing status"); }
+                { _logger.LogWarning("[Poller {JobId}] Missing status property; retrying", payload.JobId); ThrowRetry(payload, "Missing status"); return; }
                 var status = statusProp.GetString();
+                if (string.IsNullOrWhiteSpace(status))
+                { _logger.LogWarning("[Poller {JobId}] Null/empty status value; retrying", payload.JobId); ThrowRetry(payload, "Empty status"); return; }
 
                 _logger.LogInformation("[Poller {JobId}] Transcription Status: {Status}", payload.JobId, status);
                 switch (status)
                 {
                     case "NotStarted":
                     case "Running":
-                        await RequeueAndDelayAsync(storage!, payload, status!);
+                        await RequeueAndDelayAsync(storage, payload, status);
                         return; // successful completion so the current dequeue is done
                     case "Failed":
                         LogFailureDetails(root, payload.JobId, raw);
                         // Fail permanently (let move to poison after maxDequeueCount)
                         throw new InvalidOperationException("Transcription job failed");
                     case "Succeeded":
-                        await ProcessSucceededAsync(root, storage!, payload, speechRegion!, speechKey!);
+                        await ProcessSucceededAsync(root, storage, payload, speechRegion, speechKey);
                         _logger.LogInformation("[Poller {JobId}] Completed processing transcript successfully.", payload.JobId);
                         break;
                     default:
@@ -367,7 +368,7 @@ namespace AudioTranscriptionFunction
         /// <param name="input">Candidate string.</param>
         /// <returns>True if the string length is a multiple of 4 and all characters are valid base64 characters; otherwise false.</returns>
         private bool IsLikelyBase64(string input)
-        { if (input.Length % 4 != 0) return false; foreach (var c in input) if (!(char.IsLetterOrDigit(c) || c=='+'||c=='/'||c=='=')) return false; return true; }
+        { if (input.Length % 4 != 0) return false; foreach (var c in input) if (!(char.IsLetterOrDigit(c) || c == '+' || c == '/' || c == '=')) return false; return true; }
 
         /// <summary>
         /// Safely extracts the display text from an nBest hypothesis element. Falls back to lexical form when display

@@ -1,15 +1,11 @@
-using System;
-using System.Diagnostics;
-using System.Linq;
-using System.Net.Http;
-using System.Text;
-using System.Text.Json;
-using System.Threading.Tasks;
 using Azure.Storage.Blobs;
-using Azure.Storage.Sas;
 using Azure.Storage.Queues;
+using Azure.Storage.Sas;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 
 namespace AudioTranscriptionFunction
 {
