@@ -254,6 +254,10 @@ namespace AudioTranscriptionFunction
 
             var speakerMap = new System.Collections.Generic.Dictionary<int, string>();
             int seq = 1; var sb = new StringBuilder();
+            // Added topic header as first line of transcript
+            // NOTE: the topic should be set to the workflow topic so we
+            // know what set of questions to use during AI analysis.
+            sb.AppendLine("Topic: generic");
             foreach (var ph in phrases)
             {
                 if (!speakerMap.TryGetValue(ph.Speaker, out var label)) { label = ph.Speaker >= 0 ? $"Speaker {seq++}" : "Speaker ?"; speakerMap[ph.Speaker] = label; }
