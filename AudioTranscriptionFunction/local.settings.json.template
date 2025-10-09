@@ -1,0 +1,9 @@
+{
+    "IsEncrypted": false,
+    "Values": {
+        "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+        "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+        "SpeechServiceKey": "your-speech-service-key-here",
+        "SpeechServiceRegion": "your-speech-service-region-here"
+    }
+}
