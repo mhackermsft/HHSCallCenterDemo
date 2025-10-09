@@ -1,0 +1,5 @@
+What is the main reason for the call?
+Was the customer's issue resolved?
+What was the customer's sentiment during the call?
+Were there any policy violations mentioned?
+What actions were taken by the agent?
