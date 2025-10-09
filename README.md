@@ -27,7 +27,12 @@ A placeholder Azure Functions project for future functionality.
 
 ### Local Development
 
-Update the `local.settings.json` file in the `AudioTranscriptionFunction` project with your Azure credentials:
+1. Copy the `local.settings.json.template` file to `local.settings.json` in the `AudioTranscriptionFunction` project:
+   ```bash
+   cp AudioTranscriptionFunction/local.settings.json.template AudioTranscriptionFunction/local.settings.json
+   ```
+
+2. Update the `local.settings.json` file with your Azure credentials:
 
 ```json
 {
@@ -40,6 +45,8 @@ Update the `local.settings.json` file in the `AudioTranscriptionFunction` projec
     }
 }
 ```
+
+**Note:** The `local.settings.json` file is excluded from source control to protect sensitive credentials.
 
 ### Azure Deployment
 
