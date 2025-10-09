@@ -19,11 +19,28 @@ namespace AudioTranscriptionFunction
         private static readonly HttpClient _http = new HttpClient();
         private const string TranscriptionJobsQueue = "transcription-jobs"; // queue name
 
+        /// <summary>
+        /// Constructs the submit function instance. The logger is provided by the Azure Functions DI system
+        /// and is used throughout the lifecycle of a single blob-triggered invocation.
+        /// </summary>
+        /// <param name="logger">Structured logger for diagnostics.</param>
         public BatchTranscriptionSubmitFunction(ILogger<BatchTranscriptionSubmitFunction> logger)
         {
             _logger = logger;
         }
 
+        /// <summary>
+        /// Azure Function entry point triggered whenever a new audio blob is uploaded to the 'audio-input' container.
+        /// Responsibilities:
+        /// 1. Validate required configuration (Speech key/region, storage account) and ensure not using Azurite.
+        /// 2. Generate a short-lived (30 min) account SAS URL for the uploaded audio blob so Speech service can fetch it.
+        /// 3. Optionally preflight the SAS URL with an HTTP HEAD for early failure detection.
+        /// 4. Submit a batch transcription job to Azure Speech (REST API) with diarization & timestamps enabled.
+        /// 5. Enqueue a polling message to the 'transcription-jobs' queue with initial metadata for later status polling.
+        /// Any fatal error is logged and rethrown to allow retry semantics (unless configuration is incomplete, in which case it exits early).
+        /// </summary>
+        /// <param name="_">Unused blob bytes (the trigger binding supplies them but we only need the blob name).</param>
+        /// <param name="name">Name of the uploaded blob (used for SAS generation and job display name).</param>
         [Function(nameof(BatchTranscriptionSubmitFunction))]
         public async Task Run(
             [BlobTrigger("audio-input/{name}", Connection = "AzureWebJobsStorage")] byte[] _,
@@ -124,6 +141,16 @@ namespace AudioTranscriptionFunction
             }
         }
 
+        /// <summary>
+        /// Generates a shared access signature (SAS) URL for a specific blob using the account key from the connection string.
+        /// Grants read-only access for the specified TTL so the Speech service can download the audio content.
+        /// </summary>
+        /// <param name="connectionString">Full storage account connection string containing AccountName and AccountKey.</param>
+        /// <param name="container">Container name hosting the blob.</param>
+        /// <param name="blobName">Target blob name.</param>
+        /// <param name="ttl">Time-to-live for generated SAS.</param>
+        /// <returns>Absolute SAS URL to the blob with query parameters.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when connection string cannot be parsed.</exception>
         private string GetAccountSasUrl(string connectionString, string container, string blobName, TimeSpan ttl)
         {
             // Create a service client from the connection string
@@ -147,6 +174,12 @@ namespace AudioTranscriptionFunction
             return blobClient.Uri + "?" + sas;
         }
 
+        /// <summary>
+        /// Extracts the account name and key from a standard storage connection string.
+        /// </summary>
+        /// <param name="connectionString">Storage connection string with AccountName and AccountKey segments.</param>
+        /// <returns>Tuple containing account name and key.</returns>
+        /// <exception cref="InvalidOperationException">If either segment is missing.</exception>
         private (string accountName, string key) ParseConnectionString(string connectionString)
         {
             string? accountName = null;
@@ -161,6 +194,13 @@ namespace AudioTranscriptionFunction
             return (accountName, key);
         }
 
+        /// <summary>
+        /// Issues an HTTP HEAD request against the SAS URL to ensure the blob is reachable before submitting the
+        /// transcription job. Helps surface permission or network issues early.
+        /// </summary>
+        /// <param name="sasUrl">Generated blob SAS URL.</param>
+        /// <param name="invocationId">Correlation ID for logging.</param>
+        /// <returns>True if the HEAD request succeeded (2xx), otherwise false.</returns>
         private async Task<bool> PreflightHeadAsync(string sasUrl, string invocationId)
         {
             try
@@ -179,6 +219,18 @@ namespace AudioTranscriptionFunction
             }
         }
 
+        /// <summary>
+        /// Submits the batch transcription job to Azure Speech using REST. Configures diarization, word timestamps,
+        /// punctuation, and profanity filter. Returns the job ID parsed from the response body or Location header.
+        /// Throws if submission fails or a job ID cannot be determined.
+        /// </summary>
+        /// <param name="speechKey">Speech subscription key.</param>
+        /// <param name="region">Speech region (e.g., eastus).</param>
+        /// <param name="contentUrl">SAS URL pointing to the audio blob.</param>
+        /// <param name="locale">Language/locale for transcription (e.g., en-US).</param>
+        /// <param name="originalFile">Original blob name (used for displayName).</param>
+        /// <param name="invocationId">Correlation ID for log tracing.</param>
+        /// <returns>The transcription job identifier (GUID string).</returns>
         private async Task<string> SubmitBatchJobAsync(string speechKey, string region, string contentUrl, string locale, string originalFile, string invocationId)
         {
             var endpoint = $"https://{region}.api.cognitive.microsoft.com/speechtotext/v3.1/transcriptions";
@@ -238,6 +290,15 @@ namespace AudioTranscriptionFunction
             return jobId;
         }
 
+        /// <summary>
+        /// Logs presence/absence of critical configuration elements (Speech key/region, storage) and the selected locale.
+        /// Helps quickly diagnose missing app settings in logs without outputting sensitive values.
+        /// </summary>
+        /// <param name="inv">Invocation correlation ID.</param>
+        /// <param name="speechKey">Speech key (presence only logged).</param>
+        /// <param name="speechRegion">Speech region string.</param>
+        /// <param name="storage">Storage connection string (presence only logged).</param>
+        /// <param name="locale">Locale used for transcription.</param>
         private void LogConfigPresence(string inv, string? speechKey, string? speechRegion, string? storage, string locale)
         {
             _logger.LogInformation("[{Inv}] Config SpeechKeyPresent={Key} Region={Region} StoragePresent={StoragePresent} Locale={Locale}",
@@ -248,9 +309,16 @@ namespace AudioTranscriptionFunction
                 locale);
         }
 
+        /// <summary>
+        /// Truncates a string for safe logging, appending ellipsis when exceeding the specified length.
+        /// </summary>
         private static string Truncate(string value, int max)
             => string.IsNullOrEmpty(value) ? string.Empty : (value.Length <= max ? value : value.Substring(0, max) + "...");
 
+        /// <summary>
+        /// Produces a partially masked representation of a potentially sensitive query string (e.g., SAS URL)
+        /// preserving base path and concealing most of the signature.
+        /// </summary>
         private static string TruncateSensitive(string value, int max)
         {
             if (string.IsNullOrEmpty(value)) return string.Empty;

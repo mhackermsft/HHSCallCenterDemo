@@ -19,11 +19,31 @@ namespace AudioTranscriptionFunction
         private const string TranscriptionJobsQueue = "transcription-jobs";
         private const int MaxPollingAttempts = 240; // safety cap 
 
+        /// <summary>
+        /// Creates a new poller instance used by the Azure Function runtime. The logger is injected
+        /// by dependency injection and reused for all operations inside this function execution.
+        /// </summary>
+        /// <param name="logger">Logging abstraction for diagnostic output.</param>
         public BatchTranscriptionPoller(ILogger<BatchTranscriptionPoller> logger)
         {
             _logger = logger;
         }
 
+        /// <summary>
+        /// Function entry point triggered by messages appearing on the <c>transcription-jobs</c> queue.
+        /// Each message represents a transcription job previously submitted to Azure Speech.
+        /// The method:
+        /// 1. Decodes the queue message (supports raw JSON or base64 encoded JSON).
+        /// 2. Fetches current job status from the Speech REST API.
+        /// 3. Reacts based on status:
+        ///    - NotStarted/Running: re-enqueues the message with a visibility delay to poll again later.
+        ///    - Failed: logs detailed error information and throws so the message can move toward the poison queue.
+        ///    - Succeeded: downloads transcription files, extracts phrases, builds a plain text transcript, and stores it in Blob Storage.
+        /// Any transient issue throws a custom <see cref="RetryPollingException"/> so the runtime retries the message.
+        /// </summary>
+        /// <param name="message">Queue payload containing job metadata such as JobId and BlobName (may be base64).</param>
+        /// <exception cref="InvalidOperationException">Thrown for unrecoverable problems (e.g. bad payload, exceeded attempts).</exception>
+        /// <remarks>Retry semantics are controlled by throwing; the Azure Functions runtime will handle retries / poison routing.</remarks>
         [Function(nameof(BatchTranscriptionPoller))]
         public async Task Run([QueueTrigger("transcription-jobs", Connection = "AzureWebJobsStorage")] string message)
         {
@@ -114,6 +134,16 @@ namespace AudioTranscriptionFunction
             }
         }
 
+        /// <summary>
+        /// Re-enqueues the transcription job message for a future poll when the job is still in progress.
+        /// Increments the attempt counter and applies a fixed 60 second visibility delay. If attempts exceed
+        /// <see cref="MaxPollingAttempts"/>, the method throws to stop further polling.
+        /// </summary>
+        /// <param name="storageConnection">Connection string for Azure Storage (queue + blobs).</param>
+        /// <param name="payload">The queue message payload being re-enqueued; its Attempts value is incremented.</param>
+        /// <param name="status">Current transcription job status (Running or NotStarted).</param>
+        /// <exception cref="InvalidOperationException">If maximum polling attempts have been exceeded.</exception>
+        /// <remarks>Uses Base64 encoding for the re-enqueued message to avoid issues with special characters.</remarks>
         private async Task RequeueAndDelayAsync(string storageConnection, TranscriptionQueueMessage payload, string status)
         {
             payload.Attempts++;
@@ -143,9 +173,30 @@ namespace AudioTranscriptionFunction
             }
         }
 
+        /// <summary>
+        /// Attempts to deserialize the JSON queue message into a <see cref="TranscriptionQueueMessage"/> object.
+        /// Returns null if the payload is invalid JSON or does not conform to the expected shape.
+        /// </summary>
+        /// <param name="message">Raw JSON (or already-decoded) queue message.</param>
+        /// <returns>The strongly typed payload or null on failure.</returns>
         private TranscriptionQueueMessage? TryDeserializeMessage(string message)
         { try { return JsonSerializer.Deserialize<TranscriptionQueueMessage>(message); } catch { return null; } }
 
+        /// <summary>
+        /// Handles the success path for a completed transcription job. This includes:
+        /// 1. Locating the files list endpoint (from the job links or constructing a fallback URL).
+        /// 2. Downloading the list of output files and selecting the transcription file entry.
+        /// 3. Downloading the transcription JSON via the file's content URL.
+        /// 4. Extracting and ordering recognized phrases.
+        /// 5. Building a human-readable transcript (with speaker labels) and writing it to Blob Storage as a .txt file.
+        /// Any transient or recoverable issue triggers a retry by throwing a <see cref="RetryPollingException"/>.
+        /// </summary>
+        /// <param name="jobRoot">JSON root for the job status response.</param>
+        /// <param name="storage">Azure Storage connection string for blob uploads.</param>
+        /// <param name="payload">Original queue message payload with metadata (JobId, BlobName, etc.).</param>
+        /// <param name="speechRegion">Azure Speech region used for constructing fallback URLs.</param>
+        /// <param name="speechKey">Azure Speech subscription key (used for authenticated REST calls).</param>
+        /// <remarks>The generated transcript begins with a topic line that can later guide AI analysis.</remarks>
         private async Task ProcessSucceededAsync(JsonElement jobRoot, string storage, TranscriptionQueueMessage payload, string speechRegion, string speechKey)
         {
             _logger.LogInformation("[Poller {JobId}] Processing succeeded job.", payload.JobId);
@@ -277,6 +328,13 @@ namespace AudioTranscriptionFunction
             _logger.LogInformation("[Poller {JobId}] Transcript uploaded container={Container} blob={Blob}", payload.JobId, TranscriptOutputContainer, transcriptFileName);
         }
 
+        /// <summary>
+        /// Extracts and logs details about a failed transcription job, including the first error code and message
+        /// (when present). Helps with diagnosing why a job ended in the Failed state.
+        /// </summary>
+        /// <param name="root">JSON root containing potential errors array.</param>
+        /// <param name="jobId">The transcription job identifier.</param>
+        /// <param name="raw">Raw JSON string snippet for troubleshooting.</param>
         private void LogFailureDetails(JsonElement root, string jobId, string raw)
         {
             string code = string.Empty, msg = string.Empty;
@@ -293,18 +351,52 @@ namespace AudioTranscriptionFunction
             _logger.LogError("[Poller {JobId}] FAILED Code={Code} Msg={Msg} RawSnippet={Snippet}", jobId, code, msg, Truncate(raw, 220));
         }
 
+        /// <summary>
+        /// Throws a custom exception type indicating the poller should retry. Using a distinct exception type makes it
+        /// easy to differentiate between conditional retries and unexpected faults.
+        /// </summary>
+        /// <param name="payload">The current queue message payload (included for context in the exception message).</param>
+        /// <param name="reason">Short description of why a retry is needed.</param>
         private void ThrowRetry(TranscriptionQueueMessage payload, string reason)
             => throw new RetryPollingException($"Retry transcription polling {payload.JobId}: {reason}");
 
+        /// <summary>
+        /// Heuristically determines whether a string looks like base64 data. This avoids attempting to decode obviously
+        /// non-base64 messages (e.g., raw JSON) and prevents exceptions for common invalid inputs.
+        /// </summary>
+        /// <param name="input">Candidate string.</param>
+        /// <returns>True if the string length is a multiple of 4 and all characters are valid base64 characters; otherwise false.</returns>
         private bool IsLikelyBase64(string input)
         { if (input.Length % 4 != 0) return false; foreach (var c in input) if (!(char.IsLetterOrDigit(c) || c=='+'||c=='/'||c=='=')) return false; return true; }
 
+        /// <summary>
+        /// Safely extracts the display text from an nBest hypothesis element. Falls back to lexical form when display
+        /// is absent. Returns empty string when neither is found. Prevents KeyNotFound handling clutter.
+        /// </summary>
+        /// <param name="nBest0">First element of the nBest array for a recognized phrase.</param>
+        /// <returns>Display or lexical text; empty string if neither is present.</returns>
         private static string SafeGetDisplay(JsonElement nBest0)
         { if (nBest0.TryGetProperty("display", out var disp) && disp.ValueKind == JsonValueKind.String) return disp.GetString() ?? string.Empty; if (nBest0.TryGetProperty("lexical", out var lex) && lex.ValueKind == JsonValueKind.String) return lex.GetString() ?? string.Empty; return string.Empty; }
 
+        /// <summary>
+        /// Truncates an input string to a maximum length for logging, adding ellipsis when the original exceeds the limit.
+        /// Prevents log flooding while still offering context for debugging.
+        /// </summary>
+        /// <param name="v">Original string (may be null).</param>
+        /// <param name="m">Maximum length before truncation.</param>
+        /// <returns>Original string if shorter than or equal to limit; otherwise a truncated version with ellipsis.</returns>
         private static string Truncate(string? v, int m) => string.IsNullOrEmpty(v) ? string.Empty : (v.Length <= m ? v : v.Substring(0, m) + "...");
 
+        /// <summary>
+        /// Internal representation of a phrase extracted from the transcription JSON.
+        /// Contains speaker identifier, offset (ordering), and the recognized text.
+        /// </summary>
         private class RecognizedPhrase { public int Speaker { get; set; } public long Offset { get; set; } public string Text { get; set; } = string.Empty; }
+
+        /// <summary>
+        /// Custom exception used strictly to signal intentional polling retries (transient state or recoverable issues).
+        /// Distinguishes expected retry flow from unexpected errors which also cause retries but should be logged differently.
+        /// </summary>
         private class RetryPollingException : Exception { public RetryPollingException(string msg) : base(msg) { } }
     }
 }
