@@ -82,8 +82,6 @@ Example settings (replace placeholders with your values):
 
     // Data storage for transcripts and results (primary storage account)
     "TranscriptsStorage": "<PRIMARY_STORAGE_CONNECTION_STRING>",
-    // Optional: if omitted, results are written to the same account as TranscriptsStorage
-    "ResultsStorage": "<PRIMARY_STORAGE_CONNECTION_STRING>",
 
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
 
@@ -97,7 +95,6 @@ Example settings (replace placeholders with your values):
 
 Notes:
 - `TranscriptsStorage` must point to the primary storage account that contains the `transcript-output` and `final-output` containers.
-- `ResultsStorage` is optional; when omitted, results are written to `final-output` in the same account as `TranscriptsStorage`.
 - The AIQuestionsProcessing function reads questions from its local `Questions` folder in the build output.
 
 ### Azure Deployment
