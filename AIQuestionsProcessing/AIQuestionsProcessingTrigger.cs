@@ -1,15 +1,29 @@
 using Azure;
+using Azure.AI.OpenAI;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using System.Globalization;
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace AIQuestionsProcessing
 {
+    /// <summary>
+    /// Azure Function that is triggered whenever a new transcript text file is written to the
+    /// <c>transcript-output</c> blob container. It loads a list of pre-defined questions (topic-specific or
+    /// generic), sends each question along with the transcript to Azure OpenAI, and saves the answers
+    /// to a results blob.
+    /// </summary>
+    /// <remarks>
+    /// High level flow:
+    /// 1. Trigger fires for a new transcript blob.
+    /// 2. Reads transcript text and attempts to extract a topic from the first non-empty line (e.g. "Topic: benefits").
+    /// 3. Loads a questions file matching the topic (or a generic one if topic-specific file not found).
+    /// 4. For each question, calls Azure OpenAI (chat completion) providing the transcript as context.
+    /// 5. Aggregates question / answer pairs and writes them to a <c>final-output</c> container.
+    /// </remarks>
     public class AIQuestionsProcessingTrigger
     {
         private readonly ILogger<AIQuestionsProcessingTrigger> _logger;
@@ -20,27 +34,24 @@ namespace AIQuestionsProcessing
         };
 
         /// <summary>
-        /// Constructs the trigger class used by the Azure Functions runtime. A logger is injected for structured
-        /// diagnostic output throughout transcript question processing.
+        /// Creates a new instance of <see cref="AIQuestionsProcessingTrigger"/>
         /// </summary>
-        /// <param name="logger">Logger instance provided by dependency injection.</param>
+        /// <param name="logger">Logger used to record diagnostic information and errors.</param>
         public AIQuestionsProcessingTrigger(ILogger<AIQuestionsProcessingTrigger> logger)
         {
             _logger = logger;
         }
 
         /// <summary>
-        /// Azure Function entry point triggered when a transcript text blob is uploaded to the 'transcript-output' container.
-        /// Workflow:
-        /// 1. Validates configuration for transcript storage, results storage (optional), and Azure OpenAI settings.
-        /// 2. Reads full transcript content and extracts the topic (first non-empty line starting with 'Topic:').
-        /// 3. Removes the topic line for model input and loads a set of questions based on the topic or a generic fallback.
-        /// 4. For each question, calls the Azure OpenAI Chat Completions endpoint and collects answers.
-        /// 5. Writes aggregated Q/A results to a blob in the 'final-output' container (or a message if no questions found).
-        /// Throws on configuration or API failures so the runtime can retry if appropriate.
+        /// Main Azure Function entry point. Processes a transcript when a blob is uploaded.
         /// </summary>
-        /// <param name="transcriptStream">Stream of the transcript file content.</param>
-        /// <param name="name">Original transcript blob name (used to derive result file name).</param>
+        /// <param name="transcriptStream">The raw stream containing the transcript text file contents.</param>
+        /// <param name="name">The original blob name (file name of the transcript).</param>
+        /// <remarks>
+        /// This method orchestrates reading the transcript, loading questions, calling the AI model, and
+        /// writing results. If configuration is missing (e.g. Azure OpenAI settings), it throws an exception.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Thrown if required environment variables are missing.</exception>
         [Function(nameof(AIQuestionsProcessingTrigger))]
         public async Task Run(
             [BlobTrigger("transcript-output/{name}", Connection = "TranscriptsStorage")] Stream transcriptStream,
@@ -66,14 +77,12 @@ namespace AIQuestionsProcessing
                     throw new InvalidOperationException("Azure OpenAI configuration missing");
                 }
 
-                // Normalize endpoint
                 if (!aoaiEndpoint.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     aoaiEndpoint = "https://" + aoaiEndpoint.TrimStart('/');
                 }
                 aoaiEndpoint = aoaiEndpoint.TrimEnd('/');
 
-                // Read transcript once
                 string transcript;
                 using (var reader = new StreamReader(transcriptStream))
                 {
@@ -81,7 +90,6 @@ namespace AIQuestionsProcessing
                 }
                 _logger.LogInformation("Transcript read successfully. Length: {Length} characters", transcript.Length);
 
-                // Extract topic and load questions
                 var topic = ExtractTopic(transcript) ?? "generic";
                 _logger.LogInformation("Extracted topic: {Topic}", topic);
 
@@ -97,53 +105,38 @@ namespace AIQuestionsProcessing
                     _logger.LogInformation("Loaded {Count} questions for topic '{Topic}' from local Questions folder.", questions.Count, topic);
                 }
 
-                // Process each question using Azure OpenAI deployment
                 var results = new List<string>();
                 if (questions.Count > 0)
                 {
-                    using var http = new HttpClient
+                    var client = new OpenAIClient(new Uri(aoaiEndpoint), new AzureKeyCredential(aoaiApiKey));
+
+                    foreach (var (question, index) in questions.Select((q, i) => (q, i)))
                     {
-                        BaseAddress = new Uri(aoaiEndpoint)
-                    };
-                    http.DefaultRequestHeaders.Add("api-key", aoaiApiKey);
+                        _logger.LogInformation("Processing question {Index}/{Total}: {Question}", index + 1, questions.Count, question);
 
-                    // Build deployment-scoped path per Azure OpenAI REST
-                    // POST /openai/deployments/{deployment}/chat/completions?api-version=2024-06-01
-                    var requestUri = $"/openai/deployments/{Uri.EscapeDataString(aoaiDeployment)}/chat/completions?api-version=2024-06-01";
-
-                    for (int i = 0; i < questions.Count; i++)
-                    {
-                        var question = questions[i];
-                        _logger.LogInformation("Processing question {Index}/{Total}: {Question}", i + 1, questions.Count, question);
-
-                        var payload = new
+                        var chatOptions = new ChatCompletionsOptions
                         {
-                            messages = new object[]
-                            {
-                                new { role = "system", content = "You are an AI assistant analyzing call center transcripts. Answer the question based solely on the transcript provided." },
-                                new { role = "user", content = $"{cleanedTranscript}\n\n{question}" }
-                            },
-                            temperature = 0.7,
-                            max_tokens = 1000
+                            Temperature = 0.2f,
+                            MaxTokens = 1000,
+                            DeploymentName = aoaiDeployment
                         };
+                        chatOptions.Messages.Add(new ChatRequestSystemMessage("You are an AI assistant analyzing call center transcripts. Answer the question based solely on the transcript provided."));
+                        chatOptions.Messages.Add(new ChatRequestUserMessage($"{cleanedTranscript}\n\n{question}"));
 
-                        var resp = await http.PostAsJsonAsync(requestUri, payload, JsonOptions);
-                        if (!resp.IsSuccessStatusCode)
+                        Response<ChatCompletions> response;
+                        try
                         {
-                            var err = await resp.Content.ReadAsStringAsync();
-                            _logger.LogError("Azure OpenAI call failed. Status {Status}: {Body}", (int)resp.StatusCode, err);
-                            throw new RequestFailedException((int)resp.StatusCode, $"Azure OpenAI returned {(int)resp.StatusCode}");
+                            response = await client.GetChatCompletionsAsync(chatOptions);
+                        }
+                        catch (RequestFailedException rfe)
+                        {
+                            _logger.LogError(rfe, "Azure OpenAI call failed for question {Index}/{Total}", index + 1, questions.Count);
+                            throw;
                         }
 
-                        using var json = await resp.Content.ReadFromJsonAsync<JsonDocument>();
-                        var answer = json?.RootElement
-                            .GetProperty("choices")[0]
-                            .GetProperty("message")
-                            .GetProperty("content")
-                            .GetString() ?? string.Empty;
-
+                        var answer = response.Value.Choices.FirstOrDefault()?.Message?.Content ?? string.Empty;
                         results.Add($"Q: {question}\nA: {answer}");
-                        _logger.LogInformation("Completed question {Index}/{Total}", i + 1, questions.Count);
+                        _logger.LogInformation("Completed question {Index}/{Total}", index + 1, questions.Count);
                     }
                 }
 
@@ -158,12 +151,11 @@ namespace AIQuestionsProcessing
         }
 
         /// <summary>
-        /// Attempts to extract the topic line from the transcript. The topic is expected to be the first
-        /// non-empty line starting with 'Topic:'. The extracted value is sanitized to produce a safe file fragment.
-        /// Returns null when no valid topic line is detected.
+        /// Looks at the very first non-empty line of the transcript to see if it starts with
+        /// <c>Topic:</c>. If so, extracts and normalizes that topic name for use in file lookup.
         /// </summary>
         /// <param name="transcript">Full transcript text.</param>
-        /// <returns>Sanitized lowercase topic identifier or null if not found.</returns>
+        /// <returns>The sanitized topic string (lowercase, no spaces / invalid file chars) or <c>null</c> if not found.</returns>
         private string? ExtractTopic(string transcript)
         {
             if (string.IsNullOrWhiteSpace(transcript)) return null;
@@ -172,25 +164,24 @@ namespace AIQuestionsProcessing
             string? line;
             while ((line = reader.ReadLine()) != null)
             {
-                if (line.Trim().Length == 0) continue; // skip blank lines
+                if (line.Trim().Length == 0) continue;
                 if (line.StartsWith("Topic:", StringComparison.OrdinalIgnoreCase))
                 {
                     var topicValue = line.Substring(line.IndexOf(':') + 1).Trim();
                     var sanitized = new string(topicValue.ToLowerInvariant().Where(ch => !Path.GetInvalidFileNameChars().Contains(ch) && !char.IsWhiteSpace(ch)).ToArray());
                     return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
                 }
-                break; // first non-empty line not a topic line
+                break;
             }
             return null;
         }
 
         /// <summary>
-        /// Produces a version of the transcript without the leading topic line so that model prompts do not
-        /// contain meta-data. Only the first non-empty line is inspected; if it starts with 'Topic:' it is removed.
-        /// Preserves remaining transcript content.
+        /// Removes the initial <c>Topic:</c> line (if present) so the AI model does not treat it as part of the
+        /// conversation content.
         /// </summary>
-        /// <param name="transcript">Original transcript text including topic header.</param>
-        /// <returns>Transcript without topic header; trimmed of trailing whitespace.</returns>
+        /// <param name="transcript">Full transcript text (possibly starting with a topic line).</param>
+        /// <returns>The transcript without the topic declaration line.</returns>
         private string RemoveTopicLine(string transcript)
         {
             if (string.IsNullOrWhiteSpace(transcript)) return transcript;
@@ -215,12 +206,11 @@ namespace AIQuestionsProcessing
         }
 
         /// <summary>
-        /// Loads a list of questions from the local output folder ("Questions" directory deployed with the function).
-        /// Applies several naming variants: exact topic, TitleCase, UPPER, and then generic fallbacks. The first file
-        /// found with at least one question terminates the search.
+        /// Attempts to load a list of questions from the <c>Questions</c> folder in the build output.
+        /// It tries several filename variations for the specific topic before falling back to generic files.
         /// </summary>
-        /// <param name="topic">Topic identifier extracted from the transcript or 'generic'.</param>
-        /// <returns>List of non-empty question strings. May be empty if no file found.</returns>
+        /// <param name="topic">Topic name extracted from the transcript (or "generic").</param>
+        /// <returns>A list of individual question strings. Empty if no file found.</returns>
         private List<string> LoadQuestionsFromLocal(string topic)
         {
             var list = new List<string>();
@@ -264,15 +254,14 @@ namespace AIQuestionsProcessing
             {
                 _logger.LogWarning(ex, "Error loading questions from local folder.");
             }
-            return list; // empty
+            return list;
         }
 
         /// <summary>
-        /// Splits raw file contents into individual question lines, trimming whitespace and excluding blanks.
-        /// Uses both carriage return and newline as separators for cross-platform compatibility.
+        /// Splits raw text (from a questions file) into individual non-empty lines.
         /// </summary>
-        /// <param name="text">Entire contents of the questions file.</param>
-        /// <returns>List of cleaned question strings (may be empty).</returns>
+        /// <param name="text">Full contents of a questions text file.</param>
+        /// <returns>List of trimmed, non-empty question lines.</returns>
         private List<string> ParseQuestions(string text)
             => text.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
                    .Select(q => q.Trim())
@@ -280,13 +269,12 @@ namespace AIQuestionsProcessing
                    .ToList();
 
         /// <summary>
-        /// Persists the Azure OpenAI question/answer results (or a message indicating no questions were processed)
-        /// to the 'final-output' container. The output filename is derived from the original transcript name with
-        /// a '_questionresults.txt' suffix.
+        /// Writes the aggregated question / answer results to a blob in the <c>final-output</c> container.
+        /// Creates the container if it does not already exist.
         /// </summary>
-        /// <param name="resultsConnection">Connection string to the storage account used for results.</param>
-        /// <param name="originalFileName">Original transcript blob filename.</param>
-        /// <param name="results">List of Q/A blocks (may be empty).</param>
+        /// <param name="resultsConnection">Storage connection string to use for writing results.</param>
+        /// <param name="originalFileName">Original transcript blob name (used to derive results filename).</param>
+        /// <param name="results">List of formatted question / answer pairs.</param>
         private async Task WriteResultsToBlob(string resultsConnection, string originalFileName, List<string> results)
         {
             var blobServiceClient = new BlobServiceClient(resultsConnection);
