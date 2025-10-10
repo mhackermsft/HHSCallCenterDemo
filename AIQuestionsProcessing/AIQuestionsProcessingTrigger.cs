@@ -66,7 +66,6 @@ namespace AIQuestionsProcessing
                 {
                     throw new InvalidOperationException("TranscriptsStorage connection string not configured");
                 }
-                var resultsConnectionString = Environment.GetEnvironmentVariable("ResultsStorage") ?? transcriptsConnectionString;
 
                 var aoaiEndpoint = Environment.GetEnvironmentVariable("AzureOpenAI__Endpoint");
                 var aoaiApiKey = Environment.GetEnvironmentVariable("AzureOpenAI__ApiKey");
@@ -140,7 +139,7 @@ namespace AIQuestionsProcessing
                     }
                 }
 
-                await WriteResultsToBlob(resultsConnectionString, name, results);
+                await WriteResultsToBlob(transcriptsConnectionString, name, results);
                 _logger.LogInformation("Successfully processed all questions for transcript: {Name}", name);
             }
             catch (Exception ex)

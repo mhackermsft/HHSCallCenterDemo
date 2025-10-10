@@ -28,7 +28,7 @@ Processes finished transcripts and runs Azure OpenAI question/answering.
 - Extracts an optional topic line (`Topic: <name>`) from the first non-empty line to choose a topic-specific questions file; falls back to `generic.txt`.
 - Loads question files from local `Questions` folder copied to the build output (supports multiple casing patterns).
 - Calls Azure OpenAI Chat Completions (Azure.AI.OpenAI SDK) once per question, providing the full transcript as context.
-- Writes aggregated Q/A pairs to `{original_name}_questionresults.txt` in the `final-output` container (using `ResultsStorage` if supplied, otherwise `TranscriptsStorage`).
+- Writes aggregated Q/A pairs to `{original_name}_questionresults.txt` in the `final-output` container (using `TranscriptsStorage`).
 
 ## Processing Pipeline (End-to-End)
 1. Upload audio file to `audio-input` container (primary storage).
@@ -72,7 +72,6 @@ AudioTranscriptionFunction:
 AIQuestionsProcessing:
 - `AzureWebJobsStorage` (secondary storage connection string – host only)
 - `TranscriptsStorage` (primary storage connection string – read transcripts / write results)
-- `ResultsStorage` (optional; if provided overrides where results are written, otherwise uses `TranscriptsStorage`)
 - `AzureOpenAI__Endpoint` (e.g. https://YOUR_RESOURCE.openai.azure.com/)
 - `AzureOpenAI__ApiKey`
 - `AzureOpenAI__DeploymentName` (deployment, not raw model name)
@@ -136,7 +135,6 @@ AudioTranscriptionFunction:
 AIQuestionsProcessing:
 - `AzureWebJobsStorage` (secondary)
 - `TranscriptsStorage` (primary)
-- (Optional) `ResultsStorage`
 - `AzureOpenAI__Endpoint`
 - `AzureOpenAI__ApiKey`
 - `AzureOpenAI__DeploymentName`
