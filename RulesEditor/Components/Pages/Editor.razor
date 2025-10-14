@@ -4,175 +4,263 @@
 @using RulesEditor.Services
 @inject DecisionTreeService TreeService
 
-<PageTitle>Rules.json Editor</PageTitle>
+<PageTitle>Decision Tree Builder</PageTitle>
 
 <div class="container-fluid">
     <div class="row">
-        <div class="col-12">
-            <h1>Decision Tree Rules Editor</h1>
-            <p class="lead">Create and edit rules.json files for the DecisionTreeFunction</p>
+        <div class="col-12 mb-3">
+            <h1>Decision Tree Builder</h1>
+            <p class="lead">Build your decision tree visually - no coding required</p>
         </div>
     </div>
 
-    <div class="row mt-3">
-        <div class="col-md-6">
-            <div class="card">
+    <div class="row">
+        <!-- Tree Settings Panel -->
+        <div class="col-md-3">
+            <div class="card mb-3">
                 <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">JSON Editor</h5>
+                    <h5 class="mb-0"><i class="bi bi-gear"></i> Tree Settings</h5>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <label class="form-label">Decision Tree JSON:</label>
-                        <textarea class="form-control font-monospace" 
-                                  rows="25" 
-                                  @bind="jsonContent" 
-                                  @bind:event="oninput"
-                                  style="font-size: 12px;"></textarea>
+                        <label class="form-label">Tree ID</label>
+                        <input type="text" class="form-control" @bind="treeId" />
                     </div>
-                    
-                    <div class="d-flex gap-2 flex-wrap">
-                        <button class="btn btn-success" @onclick="ValidateJson">
-                            <i class="bi bi-check-circle"></i> Validate
-                        </button>
-                        <button class="btn btn-primary" @onclick="SaveToFile">
-                            <i class="bi bi-save"></i> Save to File
+                    <div class="mb-3">
+                        <label class="form-label">Version</label>
+                        <input type="text" class="form-control" @bind="treeVersion" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Start Node</label>
+                        <select class="form-select" @bind="startNodeId">
+                            <option value="">-- Select Start Node --</option>
+                            @foreach (var node in nodes)
+                            {
+                                <option value="@node.Id">@node.Id</option>
+                            }
+                        </select>
+                    </div>
+                    <hr />
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-success" @onclick="SaveTree">
+                            <i class="bi bi-save"></i> Save Tree
                         </button>
                         <label class="btn btn-info">
-                            <i class="bi bi-upload"></i> Load File
+                            <i class="bi bi-upload"></i> Load Tree
                             <InputFile OnChange="LoadFile" class="d-none" accept=".json" />
                         </label>
-                        <button class="btn btn-secondary" @onclick="DownloadJson">
-                            <i class="bi bi-download"></i> Download
-                        </button>
-                        <button class="btn btn-warning" @onclick="CreateNew">
-                            <i class="bi bi-file-earmark-plus"></i> New
-                        </button>
-                        <button class="btn btn-outline-secondary" @onclick="LoadExample">
-                            <i class="bi bi-file-text"></i> Load Example
+                        <button class="btn btn-warning" @onclick="NewTree">
+                            <i class="bi bi-file-earmark-plus"></i> New Tree
                         </button>
                     </div>
                 </div>
             </div>
+
+            @if (!string.IsNullOrEmpty(statusMessage))
+            {
+                <div class="alert @(isSuccess ? "alert-success" : "alert-danger")" role="alert">
+                    @statusMessage
+                </div>
+            }
         </div>
 
-        <div class="col-md-6">
+        <!-- Nodes List Panel -->
+        <div class="col-md-4">
             <div class="card">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Validation & Preview</h5>
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-diagram-3"></i> Nodes</h5>
+                    <button class="btn btn-sm btn-light" @onclick="AddNewNode">
+                        <i class="bi bi-plus-circle"></i> Add Node
+                    </button>
                 </div>
                 <div class="card-body" style="max-height: 600px; overflow-y: auto;">
-                    @if (!string.IsNullOrEmpty(validationMessage))
+                    @if (!nodes.Any())
                     {
-                        <div class="alert @(isValid ? "alert-success" : "alert-danger")" role="alert">
-                            <h6 class="alert-heading">@(isValid ? "✓ Validation Passed" : "✗ Validation Failed")</h6>
-                            <pre class="mb-0" style="white-space: pre-wrap;">@validationMessage</pre>
+                        <div class="text-center text-muted py-4">
+                            <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                            <p>No nodes yet. Click "Add Node" to get started.</p>
                         </div>
                     }
-
-                    @if (currentTree != null && isValid)
+                    else
                     {
-                        <div class="mt-3">
-                            <h6>Decision Tree Structure:</h6>
-                            <ul class="list-group">
-                                <li class="list-group-item">
-                                    <strong>ID:</strong> @currentTree.Id
-                                </li>
-                                <li class="list-group-item">
-                                    <strong>Version:</strong> @currentTree.Version
-                                </li>
-                                <li class="list-group-item">
-                                    <strong>Start Node:</strong> @currentTree.StartNodeId
-                                </li>
-                                <li class="list-group-item">
-                                    <strong>Total Nodes:</strong> @currentTree.Nodes.Count
-                                </li>
-                            </ul>
-
-                            <h6 class="mt-3">Nodes:</h6>
-                            <div class="accordion" id="nodeAccordion">
-                                @foreach (var node in currentTree.Nodes.OrderBy(n => n.Key))
-                                {
-                                    <div class="accordion-item">
-                                        <h2 class="accordion-header" id="heading-@node.Key">
-                                            <button class="accordion-button collapsed" type="button" 
-                                                    data-bs-toggle="collapse" 
-                                                    data-bs-target="#collapse-@node.Key" 
-                                                    aria-expanded="false" 
-                                                    aria-controls="collapse-@node.Key">
-                                                <span class="badge bg-@GetNodeTypeBadge(node.Value.Type) me-2">@node.Value.Type</span>
-                                                <strong>@node.Key</strong>
-                                            </button>
-                                        </h2>
-                                        <div id="collapse-@node.Key" 
-                                             class="accordion-collapse collapse" 
-                                             aria-labelledby="heading-@node.Key" 
-                                             data-bs-parent="#nodeAccordion">
-                                            <div class="accordion-body">
-                                                <p><strong>Prompt:</strong> @node.Value.Prompt</p>
-                                                
-                                                @if (node.Value.Choices != null && node.Value.Choices.Any())
-                                                {
-                                                    <p><strong>Choices:</strong></p>
-                                                    <ul>
-                                                        @foreach (var choice in node.Value.Choices)
-                                                        {
-                                                            <li>@choice.Label (@choice.Key) → @choice.NextNodeId</li>
-                                                        }
-                                                    </ul>
-                                                }
-                                                
-                                                @if (node.Value.Rules != null && node.Value.Rules.Any())
-                                                {
-                                                    <p><strong>Rules:</strong></p>
-                                                    <ul>
-                                                        @foreach (var rule in node.Value.Rules)
-                                                        {
-                                                            <li>@rule.Operator @rule.Value → @rule.NextNodeId</li>
-                                                        }
-                                                    </ul>
-                                                }
-                                                
-                                                @if (!string.IsNullOrEmpty(node.Value.DefaultNextNodeId))
-                                                {
-                                                    <p><strong>Default Next Node:</strong> @node.Value.DefaultNextNodeId</p>
-                                                }
-                                            </div>
+                        <div class="list-group">
+                            @foreach (var node in nodes)
+                            {
+                                <a href="javascript:void(0)" 
+                                   class="list-group-item list-group-item-action @(selectedNode == node ? "active" : "")"
+                                   @onclick="() => SelectNode(node)">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <span class="badge bg-@GetNodeTypeBadge(node.Type) me-2">@node.Type</span>
+                                            <strong>@node.Id</strong>
+                                            @if (node.Id == startNodeId)
+                                            {
+                                                <span class="badge bg-success ms-2">START</span>
+                                            }
+                                            <br />
+                                            <small class="text-muted">@GetNodeSummary(node)</small>
                                         </div>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteNode(node)" @onclick:stopPropagation="true">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
                                     </div>
-                                }
-                            </div>
+                                </a>
+                            }
                         </div>
                     }
                 </div>
             </div>
         </div>
-    </div>
 
-    <div class="row mt-4">
-        <div class="col-12">
+        <!-- Node Editor Panel -->
+        <div class="col-md-5">
             <div class="card">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0">Documentation</h5>
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-pencil"></i> Node Editor</h5>
                 </div>
-                <div class="card-body">
-                    <h6>Node Types:</h6>
-                    <ul>
-                        <li><strong>End:</strong> Terminal node that concludes the flow</li>
-                        <li><strong>SingleChoice:</strong> Presents multiple choice options</li>
-                        <li><strong>Number:</strong> Evaluates numeric responses against rules</li>
-                    </ul>
-                    
-                    <h6 class="mt-3">Validation Rules:</h6>
-                    <ul>
-                        <li>Decision tree must have a valid startNodeId</li>
-                        <li>Start node must exist in the nodes collection</li>
-                        <li>All node references (choices, rules, defaultNextNodeId) must point to existing nodes</li>
-                        <li>No cycles are allowed in the decision tree</li>
-                        <li>All nodes must be reachable from the start node</li>
-                    </ul>
-                    
-                    <h6 class="mt-3">Operators for Number Nodes:</h6>
-                    <p><code>LessThan</code>, <code>LessThanOrEqual</code>, <code>GreaterThan</code>, <code>GreaterOrEqual</code>, <code>Equal</code></p>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    @if (selectedNode == null)
+                    {
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-cursor" style="font-size: 3rem;"></i>
+                            <p>Select a node from the list to edit it</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Node ID</strong></label>
+                            <input type="text" class="form-control" @bind="selectedNode.Id" @bind:event="oninput" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Node Type</strong></label>
+                            <select class="form-select" @bind="selectedNode.Type" @bind:event="onchange">
+                                <option value="End">End - Terminal node</option>
+                                <option value="SingleChoice">Single Choice - Multiple options</option>
+                                <option value="Number">Number - Numeric evaluation</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label"><strong>Prompt / Message</strong></label>
+                            <textarea class="form-control" rows="3" @bind="selectedNode.Prompt" @bind:event="oninput"></textarea>
+                            <small class="text-muted">The question or message for this node</small>
+                        </div>
+
+                        @if (selectedNode.Type == "SingleChoice")
+                        {
+                            <hr />
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0"><strong>Choices</strong></label>
+                                    <button class="btn btn-sm btn-primary" @onclick="AddChoice">
+                                        <i class="bi bi-plus"></i> Add Choice
+                                    </button>
+                                </div>
+                                
+                                @if (selectedNode.Choices == null || !selectedNode.Choices.Any())
+                                {
+                                    <p class="text-muted">No choices yet</p>
+                                }
+                                else
+                                {
+                                    @for (int i = 0; i < selectedNode.Choices.Count; i++)
+                                    {
+                                        var index = i;
+                                        var choice = selectedNode.Choices[index];
+                                        <div class="card mb-2">
+                                            <div class="card-body p-2">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <small class="text-muted">Choice @(index + 1)</small>
+                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveChoice(index)">
+                                                        <i class="bi bi-x"></i>
+                                                    </button>
+                                                </div>
+                                                <input type="text" class="form-control form-control-sm mb-1" placeholder="Key (e.g., yes)" @bind="choice.Key" />
+                                                <input type="text" class="form-control form-control-sm mb-1" placeholder="Label (e.g., Yes, I agree)" @bind="choice.Label" />
+                                                <select class="form-select form-select-sm" @bind="choice.NextNodeId">
+                                                    <option value="">-- Select Next Node --</option>
+                                                    @foreach (var node in nodes)
+                                                    {
+                                                        <option value="@node.Id">@node.Id</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+
+                        @if (selectedNode.Type == "Number")
+                        {
+                            <hr />
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0"><strong>Rules</strong></label>
+                                    <button class="btn btn-sm btn-primary" @onclick="AddRule">
+                                        <i class="bi bi-plus"></i> Add Rule
+                                    </button>
+                                </div>
+                                
+                                @if (selectedNode.Rules == null || !selectedNode.Rules.Any())
+                                {
+                                    <p class="text-muted">No rules yet</p>
+                                }
+                                else
+                                {
+                                    @for (int i = 0; i < selectedNode.Rules.Count; i++)
+                                    {
+                                        var index = i;
+                                        var rule = selectedNode.Rules[index];
+                                        <div class="card mb-2">
+                                            <div class="card-body p-2">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <small class="text-muted">Rule @(index + 1)</small>
+                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveRule(index)">
+                                                        <i class="bi bi-x"></i>
+                                                    </button>
+                                                </div>
+                                                <select class="form-select form-select-sm mb-1" @bind="rule.Operator">
+                                                    <option value="">-- Select Operator --</option>
+                                                    <option value="LessThan">Less Than (&lt;)</option>
+                                                    <option value="LessThanOrEqual">Less Than or Equal (&lt;=)</option>
+                                                    <option value="GreaterThan">Greater Than (&gt;)</option>
+                                                    <option value="GreaterOrEqual">Greater Than or Equal (&gt;=)</option>
+                                                    <option value="Equal">Equal (=)</option>
+                                                </select>
+                                                <input type="number" class="form-control form-control-sm mb-1" placeholder="Value" @bind="rule.Value" />
+                                                <select class="form-select form-select-sm" @bind="rule.NextNodeId">
+                                                    <option value="">-- Select Next Node --</option>
+                                                    @foreach (var node in nodes)
+                                                    {
+                                                        <option value="@node.Id">@node.Id</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+                            </div>
+                        }
+
+                        @if (selectedNode.Type != "End")
+                        {
+                            <hr />
+                            <div class="mb-3">
+                                <label class="form-label"><strong>Default Next Node</strong></label>
+                                <select class="form-select" @bind="selectedNode.DefaultNextNodeId">
+                                    <option value="">-- None (optional) --</option>
+                                    @foreach (var node in nodes)
+                                    {
+                                        <option value="@node.Id">@node.Id</option>
+                                    }
+                                </select>
+                                <small class="text-muted">Used when no choice/rule matches</small>
+                            </div>
+                        }
+                    }
                 </div>
             </div>
         </div>
@@ -180,38 +268,136 @@
 </div>
 
 @code {
-    private string jsonContent = "";
-    private string validationMessage = "";
-    private bool isValid = false;
-    private DecisionTree? currentTree = null;
-    private string saveFilePath = "rules.json";
+    private string treeId = "my-decision-tree";
+    private string treeVersion = "1.0.0";
+    private string startNodeId = "";
+    private List<DecisionNode> nodes = new();
+    private DecisionNode? selectedNode = null;
+    private string statusMessage = "";
+    private bool isSuccess = false;
 
     protected override void OnInitialized()
     {
-        LoadExample();
+        // Start with a simple example
+        LoadExampleTree();
     }
 
-    private void ValidateJson()
+    private void LoadExampleTree()
     {
-        if (string.IsNullOrWhiteSpace(jsonContent))
-        {
-            validationMessage = "JSON content is empty";
-            isValid = false;
-            return;
-        }
-
-        var result = TreeService.LoadFromJson(jsonContent);
-        isValid = result.Success;
-        currentTree = result.Tree;
+        treeId = "example-tree";
+        treeVersion = "1.0.0";
+        startNodeId = "start";
         
-        if (result.Success)
+        nodes = new List<DecisionNode>
         {
-            validationMessage = "✓ Validation successful!\n\nThe decision tree is well-formed and all references are valid.";
-        }
-        else
+            new DecisionNode
+            {
+                Id = "start",
+                Type = "SingleChoice",
+                Prompt = "How can we help you today?",
+                Choices = new List<Choice>
+                {
+                    new Choice { Key = "question", Label = "I have a question", NextNodeId = "end_question" },
+                    new Choice { Key = "issue", Label = "I have an issue", NextNodeId = "end_issue" }
+                }
+            },
+            new DecisionNode
+            {
+                Id = "end_question",
+                Type = "End",
+                Prompt = "We'll connect you with someone who can answer your question."
+            },
+            new DecisionNode
+            {
+                Id = "end_issue",
+                Type = "End",
+                Prompt = "We'll help you resolve your issue."
+            }
+        };
+    }
+
+    private void AddNewNode()
+    {
+        var newNode = new DecisionNode
         {
-            validationMessage = result.ErrorMessage ?? "Unknown validation error";
+            Id = $"node_{nodes.Count + 1}",
+            Type = "End",
+            Prompt = "Enter your prompt here"
+        };
+        nodes.Add(newNode);
+        selectedNode = newNode;
+    }
+
+    private void SelectNode(DecisionNode node)
+    {
+        selectedNode = node;
+    }
+
+    private void DeleteNode(DecisionNode node)
+    {
+        nodes.Remove(node);
+        if (selectedNode == node)
+        {
+            selectedNode = null;
         }
+        if (startNodeId == node.Id)
+        {
+            startNodeId = "";
+        }
+    }
+
+    private void AddChoice()
+    {
+        if (selectedNode != null)
+        {
+            selectedNode.Choices ??= new List<Choice>();
+            selectedNode.Choices.Add(new Choice 
+            { 
+                Key = $"choice{selectedNode.Choices.Count + 1}",
+                Label = "New Choice",
+                NextNodeId = ""
+            });
+        }
+    }
+
+    private void RemoveChoice(int index)
+    {
+        if (selectedNode?.Choices != null && index < selectedNode.Choices.Count)
+        {
+            selectedNode.Choices.RemoveAt(index);
+        }
+    }
+
+    private void AddRule()
+    {
+        if (selectedNode != null)
+        {
+            selectedNode.Rules ??= new List<Rule>();
+            selectedNode.Rules.Add(new Rule 
+            { 
+                Operator = "LessThan",
+                Value = "0",
+                NextNodeId = ""
+            });
+        }
+    }
+
+    private void RemoveRule(int index)
+    {
+        if (selectedNode?.Rules != null && index < selectedNode.Rules.Count)
+        {
+            selectedNode.Rules.RemoveAt(index);
+        }
+    }
+
+    private void NewTree()
+    {
+        treeId = "new-tree";
+        treeVersion = "1.0.0";
+        startNodeId = "";
+        nodes.Clear();
+        selectedNode = null;
+        statusMessage = "";
     }
 
     private async Task LoadFile(InputFileChangeEventArgs e)
@@ -221,138 +407,74 @@
             var file = e.File;
             if (file == null) return;
 
-            using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024); // 1MB max
+            using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024);
             using var reader = new StreamReader(stream);
-            jsonContent = await reader.ReadToEndAsync();
+            var json = await reader.ReadToEndAsync();
             
-            ValidateJson();
-        }
-        catch (Exception ex)
-        {
-            validationMessage = $"Error loading file: {ex.Message}";
-            isValid = false;
-        }
-    }
-
-    private void SaveToFile()
-    {
-        ValidateJson();
-        
-        if (!isValid || currentTree == null)
-        {
-            return;
-        }
-
-        try
-        {
-            var result = TreeService.SaveToFile(currentTree, saveFilePath);
-            if (result.Success)
+            var result = TreeService.LoadFromJson(json);
+            if (result.Success && result.Tree != null)
             {
-                validationMessage = $"✓ File saved successfully to {saveFilePath}";
+                treeId = result.Tree.Id;
+                treeVersion = result.Tree.Version;
+                startNodeId = result.Tree.StartNodeId;
+                nodes = result.Tree.Nodes.Values.ToList();
+                selectedNode = null;
+                statusMessage = "Tree loaded successfully!";
+                isSuccess = true;
             }
             else
             {
-                validationMessage = $"Error saving file: {result.ErrorMessage}";
-                isValid = false;
+                statusMessage = $"Error loading tree: {result.ErrorMessage}";
+                isSuccess = false;
             }
         }
         catch (Exception ex)
         {
-            validationMessage = $"Error saving file: {ex.Message}";
-            isValid = false;
+            statusMessage = $"Error loading file: {ex.Message}";
+            isSuccess = false;
         }
     }
 
-    private void DownloadJson()
+    private void SaveTree()
     {
-        // Note: Direct file download in Blazor Server requires JavaScript interop
-        // For simplicity, we show a message that the file has been saved
-        SaveToFile();
-    }
+        try
+        {
+            var tree = new DecisionTree
+            {
+                Id = treeId,
+                Version = treeVersion,
+                StartNodeId = startNodeId,
+                Nodes = nodes.ToDictionary(n => n.Id, n => n)
+            };
 
-    private void CreateNew()
-    {
-        var newTree = TreeService.CreateNewTree();
-        jsonContent = TreeService.SerializeToJson(newTree);
-        ValidateJson();
-    }
-
-    private void LoadExample()
-    {
-        jsonContent = @"{
-  ""id"": ""example-tree"",
-  ""version"": ""1.0.0"",
-  ""startNodeId"": ""q1"",
-  ""nodes"": {
-    ""q1"": {
-      ""id"": ""q1"",
-      ""prompt"": ""What type of issue is this?"",
-      ""type"": ""SingleChoice"",
-      ""choices"": [
-        {
-          ""key"": ""billing"",
-          ""label"": ""Billing Issue"",
-          ""nextNodeId"": ""q_billing""
-        },
-        {
-          ""key"": ""technical"",
-          ""label"": ""Technical Issue"",
-          ""nextNodeId"": ""q_tech""
+            var json = TreeService.SerializeToJson(tree);
+            var result = TreeService.LoadFromJson(json); // Validate
+            
+            if (result.Success)
+            {
+                var saveResult = TreeService.SaveToFile(tree, "rules.json");
+                if (saveResult.Success)
+                {
+                    statusMessage = "✓ Tree saved successfully to rules.json!";
+                    isSuccess = true;
+                }
+                else
+                {
+                    statusMessage = $"Error saving: {saveResult.ErrorMessage}";
+                    isSuccess = false;
+                }
+            }
+            else
+            {
+                statusMessage = $"Validation failed: {result.ErrorMessage}";
+                isSuccess = false;
+            }
         }
-      ]
-    },
-    ""q_billing"": {
-      ""id"": ""q_billing"",
-      ""prompt"": ""How much is the disputed amount?"",
-      ""type"": ""Number"",
-      ""rules"": [
+        catch (Exception ex)
         {
-          ""operator"": ""LessThan"",
-          ""value"": ""100"",
-          ""nextNodeId"": ""end_refund""
-        },
-        {
-          ""operator"": ""GreaterOrEqual"",
-          ""value"": ""100"",
-          ""nextNodeId"": ""end_escalate""
+            statusMessage = $"Error: {ex.Message}";
+            isSuccess = false;
         }
-      ]
-    },
-    ""q_tech"": {
-      ""id"": ""q_tech"",
-      ""prompt"": ""Have you tried restarting the device?"",
-      ""type"": ""SingleChoice"",
-      ""choices"": [
-        {
-          ""key"": ""yes"",
-          ""label"": ""Yes"",
-          ""nextNodeId"": ""end_escalate""
-        },
-        {
-          ""key"": ""no"",
-          ""label"": ""No"",
-          ""nextNodeId"": ""end_restart""
-        }
-      ]
-    },
-    ""end_refund"": {
-      ""id"": ""end_refund"",
-      ""type"": ""End"",
-      ""prompt"": ""Refund approved. Amount will be credited in 3-5 business days.""
-    },
-    ""end_escalate"": {
-      ""id"": ""end_escalate"",
-      ""type"": ""End"",
-      ""prompt"": ""Escalating to specialist for further assistance.""
-    },
-    ""end_restart"": {
-      ""id"": ""end_restart"",
-      ""type"": ""End"",
-      ""prompt"": ""Please restart the device and contact us if the issue persists.""
-    }
-  }
-}";
-        ValidateJson();
     }
 
     private string GetNodeTypeBadge(string type) => type switch
@@ -362,4 +484,18 @@
         "Number" => "warning",
         _ => "secondary"
     };
+
+    private string GetNodeSummary(DecisionNode node)
+    {
+        if (node.Type == "End")
+            return node.Prompt?.Length > 50 ? node.Prompt.Substring(0, 50) + "..." : node.Prompt ?? "";
+        
+        if (node.Type == "SingleChoice")
+            return $"{node.Choices?.Count ?? 0} choices";
+        
+        if (node.Type == "Number")
+            return $"{node.Rules?.Count ?? 0} rules";
+        
+        return "";
+    }
 }
