@@ -1,0 +1,174 @@
+{
+  "id": "essence-triage-demo",
+  "version": "1.0.0",
+  "startNodeId": "q_greeting",
+  "nodes": {
+    "q_greeting": {
+      "id": "q_greeting",
+      "prompt": "Welcome to Essence of Oregon support. What brings you here today?",
+      "type": "SingleChoice",
+      "choices": [
+        {
+          "key": "cancel",
+          "label": "I want to cancel my subscription",
+          "nextNodeId": "q_reason"
+        },
+        {
+          "key": "other",
+          "label": "Something else",
+          "nextNodeId": "end_other"
+        }
+      ],
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "q_reason": {
+      "id": "q_reason",
+      "prompt": "What is the main reason for canceling?",
+      "type": "SingleChoice",
+      "choices": [
+        {
+          "key": "affordability",
+          "label": "It\u0027s too expensive",
+          "nextNodeId": "q_usage"
+        },
+        {
+          "key": "dont_like",
+          "label": "I didn\u0027t like the product",
+          "nextNodeId": "end_cancelled"
+        },
+        {
+          "key": "other",
+          "label": "Other reason",
+          "nextNodeId": "end_escalate"
+        }
+      ],
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "q_usage": {
+      "id": "q_usage",
+      "prompt": "Have you had a chance to use the product enough to see results?",
+      "type": "SingleChoice",
+      "choices": [
+        {
+          "key": "yes",
+          "label": "Yes",
+          "nextNodeId": "q_discount40"
+        },
+        {
+          "key": "no",
+          "label": "Not really",
+          "nextNodeId": "q_extend_offer"
+        }
+      ],
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "q_extend_offer": {
+      "id": "q_extend_offer",
+      "prompt": "We can extend your free trial by 15 days at no charge so you can evaluate further. Would you like to accept the extension?",
+      "type": "SingleChoice",
+      "choices": [
+        {
+          "key": "accept",
+          "label": "Yes, extend my free trial",
+          "nextNodeId": "end_extended"
+        },
+        {
+          "key": "decline",
+          "label": "No, I\u0027d still like to cancel",
+          "nextNodeId": "end_cancelled"
+        }
+      ],
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "q_discount40": {
+      "id": "q_discount40",
+      "prompt": "We can offer a lifetime 40% employee discount. Keep the subscription for $50.28/month (from $83.80)?",
+      "type": "SingleChoice",
+      "choices": [
+        {
+          "key": "accept",
+          "label": "Accept $50.28/month",
+          "nextNodeId": "end_keep40"
+        },
+        {
+          "key": "decline",
+          "label": "Still can\u0027t afford it",
+          "nextNodeId": "q_affordable_price"
+        }
+      ],
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "q_affordable_price": {
+      "id": "q_affordable_price",
+      "prompt": "What monthly price (USD) would make it affordable for you?",
+      "type": "Number",
+      "choices": null,
+      "rules": [
+        {
+          "operator": "GreaterOrEqual",
+          "value": "30",
+          "nextNodeId": "end_supervisor_80"
+        },
+        {
+          "operator": "LessThanOrEqual",
+          "value": "29",
+          "nextNodeId": "end_cancelled"
+        }
+      ],
+      "defaultNextNodeId": null
+    },
+    "end_extended": {
+      "id": "end_extended",
+      "prompt": "Your free trial has been extended by 15 days. Please evaluate and contact us before it ends if you still wish to cancel.",
+      "type": "End",
+      "choices": null,
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "end_keep40": {
+      "id": "end_keep40",
+      "prompt": "Great! Your subscription will continue at the 40% discounted rate of $50.28/month.",
+      "type": "End",
+      "choices": null,
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "end_supervisor_80": {
+      "id": "end_supervisor_80",
+      "prompt": "Approved by supervisor: lifetime discount. Your monthly price will be $30.00.",
+      "type": "End",
+      "choices": null,
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "end_cancelled": {
+      "id": "end_cancelled",
+      "prompt": "Understood. Your subscription is canceled. Thank you for trying Essence of Oregon.",
+      "type": "End",
+      "choices": null,
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "end_escalate": {
+      "id": "end_escalate",
+      "prompt": "Thanks for the feedback. A specialist will review and follow up regarding your cancellation request.",
+      "type": "End",
+      "choices": null,
+      "rules": null,
+      "defaultNextNodeId": null
+    },
+    "end_other": {
+      "id": "end_other",
+      "prompt": "Thanks for reaching out. Please contact support for assistance with non-cancellation inquiries.",
+      "type": "End",
+      "choices": null,
+      "rules": null,
+      "defaultNextNodeId": null
+    }
+  }
+}

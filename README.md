@@ -4,7 +4,7 @@ Demo repo for an HHS Call Center solution that transcribes caller audio into tex
 
 ## Solution Structure
 
-Visual Studio solution with two Azure Functions (isolated worker / .NET 8) projects.
+Visual Studio solution with three Azure Functions projects and one web application.
 
 ### Project 1: AudioTranscriptionFunction
 Submits and monitors Azure Speech batch transcription jobs when audio files are uploaded.
@@ -24,11 +24,42 @@ Key Behaviors:
 ### Project 2: AIQuestionsProcessing
 Processes finished transcripts and runs Azure OpenAI question/answering.
 
-- `AIQuestionsProcessingTrigger` (Blob Trigger): Fires on new blobs in `transcript-output` (primary storage – referenced via `TranscriptsStorage`).
+- `AIQuestionsProcessingTrigger` (Blob Trigger): Fires on new blobs in `transcript-output` (primary storage ï¿½ referenced via `TranscriptsStorage`).
 - Extracts an optional topic line (`Topic: <name>`) from the first non-empty line to choose a topic-specific questions file; falls back to `generic.txt`.
 - Loads question files from local `Questions` folder copied to the build output (supports multiple casing patterns).
 - Calls Azure OpenAI Chat Completions (Azure.AI.OpenAI SDK) once per question, providing the full transcript as context.
 - Writes aggregated Q/A pairs to `{original_name}_questionresults.txt` in the `final-output` container (using `TranscriptsStorage`).
+
+### Project 3: DecisionTreeFunction
+Processes transcripts through a configurable decision tree using Azure OpenAI.
+
+- `DecisionTreeTrigger` (Blob Trigger): Fires on new blobs in `transcript-output` (primary storage).
+- Loads and validates decision tree from `rules.json` configuration file.
+- Processes transcript through the tree by asking questions and using AI to determine the path.
+- Validates tree structure for missing links, cycles, and unreachable nodes.
+- Writes complete Q&A history and final outcome to `{original_name}_decisiontree.txt` in the `final-output` container.
+
+### Project 4: RulesEditor (Web Application)
+A modern Blazor Server web application for creating and editing `rules.json` files used by DecisionTreeFunction.
+
+**Features:**
+- Real-time JSON validation using DecisionTreeEngine
+- Visual preview of decision tree structure with expandable node details
+- Intuitive interface with file upload/download
+- Example templates and built-in documentation
+- Validates all node references, detects cycles, ensures all nodes are reachable
+
+**Running the RulesEditor:**
+```bash
+cd RulesEditor
+dotnet run
+```
+Then navigate to http://localhost:5050
+
+See [RulesEditor/README.md](RulesEditor/README.md) for detailed documentation.
+
+### Shared Library: DecisionTreeShared
+Class library containing decision tree models and validation engine shared between DecisionTreeFunction and RulesEditor.
 
 ## Processing Pipeline (End-to-End)
 1. Upload audio file to `audio-input` container (primary storage).
@@ -64,14 +95,14 @@ Two Azure Storage accounts are required:
 
 ### Environment Variables / App Settings
 AudioTranscriptionFunction:
-- `AzureWebJobsStorage` (primary storage connection string) – must be real Azure Storage (NOT Azurite for audio) so Speech can access the blob via SAS
+- `AzureWebJobsStorage` (primary storage connection string) ï¿½ must be real Azure Storage (NOT Azurite for audio) so Speech can access the blob via SAS
 - `SpeechServiceKey`
 - `SpeechServiceRegion` (e.g. eastus)
 - `SpeechTranscriptionLocale` (optional, default `en-US`)
 
 AIQuestionsProcessing:
-- `AzureWebJobsStorage` (secondary storage connection string – host only)
-- `TranscriptsStorage` (primary storage connection string – read transcripts / write results)
+- `AzureWebJobsStorage` (secondary storage connection string ï¿½ host only)
+- `TranscriptsStorage` (primary storage connection string ï¿½ read transcripts / write results)
 - `AzureOpenAI__Endpoint` (e.g. https://YOUR_RESOURCE.openai.azure.com/)
 - `AzureOpenAI__ApiKey`
 - `AzureOpenAI__DeploymentName` (deployment, not raw model name)
