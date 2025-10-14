@@ -17,10 +17,10 @@
     
     .flowchart-canvas {
         position: relative;
-        min-height: 1500px;
-        min-width: 3000px;
+        min-height: 2000px;
+        min-width: 4000px;
         padding: 60px;
-        padding-left: 300px; /* Extra space on left to avoid nav menu overlap */
+        padding-left: 350px; /* Extra space on left to avoid nav menu overlap */
     }
     
     .flowchart-node {
@@ -336,6 +336,15 @@
     {
         LoadExampleTree();
     }
+    
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender || !layoutCalculated)
+        {
+            CalculateFlowchartLayout();
+            StateHasChanged();
+        }
+    }
 
     private class NodePosition
     {
@@ -350,6 +359,7 @@
     
     private Dictionary<string, NodePosition> nodePositions = new();
     private List<(NodePosition from, NodePosition to, string? label)> connections = new();
+    private bool layoutCalculated = false;
     
     private void CalculateFlowchartLayout()
     {
@@ -359,12 +369,58 @@
         if (string.IsNullOrEmpty(startNodeId)) return;
         
         int currentY = 80;
-        int centerX = 800; // Shifted more to the right to accommodate wider trees and left nav
+        int centerX = 1000; // Center more to the right to accommodate wider trees and left nav
         
-        CalculateNodePositions(startNodeId, centerX, currentY, new HashSet<string>());
+        // First pass: calculate tree width needed
+        var subtreeWidths = new Dictionary<string, int>();
+        CalculateSubtreeWidths(startNodeId, new HashSet<string>(), subtreeWidths);
+        
+        // Second pass: position nodes with proper spacing
+        CalculateNodePositions(startNodeId, centerX, currentY, new HashSet<string>(), subtreeWidths);
+        
+        layoutCalculated = true;
     }
     
-    private int CalculateNodePositions(string nodeId, int x, int y, HashSet<string> visited)
+    private int CalculateSubtreeWidths(string nodeId, HashSet<string> visited, Dictionary<string, int> subtreeWidths)
+    {
+        if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId))
+            return 0;
+            
+        visited.Add(nodeId);
+        
+        var node = nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (node == null) return 350; // Default width for missing nodes
+        
+        var branches = GetNodeBranches(node);
+        if (!branches.Any() || node.Type == "End")
+        {
+            subtreeWidths[nodeId] = 350; // Width for a single node
+            return 350;
+        }
+        
+        // Calculate total width needed for all child branches
+        int totalWidth = 0;
+        foreach (var branch in branches)
+        {
+            if (!string.IsNullOrEmpty(branch.NextNodeId))
+            {
+                int childWidth = CalculateSubtreeWidths(branch.NextNodeId, visited, subtreeWidths);
+                totalWidth += childWidth;
+            }
+            else
+            {
+                totalWidth += 350; // Width for branch without next node
+            }
+        }
+        
+        // Add spacing between branches
+        totalWidth += (branches.Count - 1) * 200; // 200px spacing between branches
+        
+        subtreeWidths[nodeId] = Math.Max(totalWidth, 350);
+        return subtreeWidths[nodeId];
+    }
+    
+    private int CalculateNodePositions(string nodeId, int x, int y, HashSet<string> visited, Dictionary<string, int> subtreeWidths)
     {
         if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId))
             return y;
@@ -378,7 +434,7 @@
         nodePositions[nodeId] = new NodePosition
         {
             NodeId = nodeId,
-            X = x,
+            X = x - 140, // Center the node (280px wide / 2)
             Y = y,
             Width = node.Type == "End" ? 300 : 280,
             Height = 95
@@ -386,30 +442,37 @@
         
         var branches = GetNodeBranches(node);
         if (!branches.Any() || node.Type == "End")
-            return y + 140;
+            return y + 200;
         
-        int nextY = y + 220; // Increased vertical space between levels
-        int choiceY = y + 120;
+        int nextY = y + 280; // Increased vertical space for arrows to be visible
+        int choiceY = y + 140; // Space for choice boxes
         
-        // Calculate total width needed for branches with much better spacing
-        int totalBranches = branches.Count;
-        int branchSpacing = 480; // Significantly increased spacing to prevent overlap
-        int totalWidth = (totalBranches - 1) * branchSpacing;
-        int startX = x - (totalWidth / 2);
+        // Calculate positions for branches based on subtree widths
+        int nodeWidth = subtreeWidths.ContainsKey(nodeId) ? subtreeWidths[nodeId] : 350;
+        int startX = x - (nodeWidth / 2);
+        int currentX = startX;
         
         int maxBottomY = nextY;
         
         for (int i = 0; i < branches.Count; i++)
         {
             var branch = branches[i];
-            int branchX = startX + (i * branchSpacing);
+            
+            // Get width for this branch's subtree
+            int branchWidth = 350;
+            if (!string.IsNullOrEmpty(branch.NextNodeId) && subtreeWidths.ContainsKey(branch.NextNodeId))
+            {
+                branchWidth = subtreeWidths[branch.NextNodeId];
+            }
+            
+            int branchCenterX = currentX + (branchWidth / 2);
             
             // Position choice box
             string choiceKey = $"{nodeId}_choice_{i}";
             nodePositions[choiceKey] = new NodePosition
             {
                 NodeId = choiceKey,
-                X = branchX,
+                X = branchCenterX - 110, // Center the 220px wide choice box
                 Y = choiceY,
                 Width = 220,
                 Height = 75,
@@ -423,7 +486,7 @@
             // Position next node if it exists
             if (!string.IsNullOrEmpty(branch.NextNodeId))
             {
-                int childBottomY = CalculateNodePositions(branch.NextNodeId, branchX, nextY, visited);
+                int childBottomY = CalculateNodePositions(branch.NextNodeId, branchCenterX, nextY, visited, subtreeWidths);
                 maxBottomY = Math.Max(maxBottomY, childBottomY);
                 
                 // Add connection from choice to next node
@@ -432,14 +495,20 @@
                     connections.Add((nodePositions[choiceKey], nodePositions[branch.NextNodeId], null));
                 }
             }
+            
+            // Move to next branch position
+            currentX += branchWidth + 200; // Add spacing between branches
         }
         
-        return maxBottomY + 50; // Add extra spacing at bottom
+        return maxBottomY + 80; // Add extra spacing at bottom
     }
     
     private RenderFragment RenderFlowchart() => builder =>
     {
-        CalculateFlowchartLayout();
+        if (!layoutCalculated)
+        {
+            CalculateFlowchartLayout();
+        }
         
         foreach (var pos in nodePositions.Values)
         {
@@ -716,6 +785,7 @@
         };
         
         renderedNodes.Clear();
+        layoutCalculated = false;
     }
 
     private void AddNodeAtPosition(string? parentNodeId, string? branchLabel)
@@ -758,6 +828,7 @@
         
         editingNode = newNode;
         renderedNodes.Clear();
+        layoutCalculated = false;
     }
 
     private void EditNode(DecisionNode node)
@@ -775,6 +846,8 @@
     {
         editingNode = null;
         renderedNodes.Clear();
+        layoutCalculated = false;
+        CalculateFlowchartLayout();
     }
 
     private void DeleteNode(DecisionNode node)
