@@ -1,0 +1,66 @@
+{
+  "id": "support-triage",
+  "version": "1.0.0",
+  "startNodeId": "q1",
+  "nodes": {
+    "q1": {
+      "id": "q1",
+      "prompt": "What type of issue is this?",
+      "type": "SingleChoice",
+      "choices": [
+        { "key": "billing", "label": "Billing", "nextNodeId": "q_billing" },
+        { "key": "tech",    "label": "Technical", "nextNodeId": "q_tech" }
+      ]
+    },
+
+    "q_billing": {
+      "id": "q_billing",
+      "prompt": "Is this a refund request?",
+      "type": "SingleChoice",
+      "choices": [
+        { "key": "yes", "label": "Yes", "nextNodeId": "end_refund" },
+        { "key": "no",  "label": "No",  "nextNodeId": "end_billing" }
+      ]
+    },
+
+    "q_tech": {
+      "id": "q_tech",
+      "prompt": "Have you tried power-cycling the device?",
+      "type": "SingleChoice",
+      "choices": [
+        { "key": "yes", "label": "Yes", "nextNodeId": "q_os" },
+        { "key": "no",  "label": "No",  "nextNodeId": "end_power" }
+      ]
+    },
+
+    "q_os": {
+      "id": "q_os",
+      "prompt": "Which operating system?",
+      "type": "SingleChoice",
+      "choices": [
+        { "key": "windows", "label": "Windows", "nextNodeId": "end_windows" },
+        { "key": "linux",   "label": "Linux",   "nextNodeId": "end_linux" }
+      ],
+      "defaultNextNodeId": "end_generic"
+    },
+
+    "q_age": {
+      "id": "q_age",
+      "prompt": "How old is the device (in years)?",
+      "type": "Number",
+      "rules": [
+        { "operator": "LessThan", "value": "1",  "nextNodeId": "end_warranty" },
+        { "operator": "GreaterOrEqual", "value": "1", "nextNodeId": "end_oow" }
+      ]
+    },
+
+    "end_refund":  { "id": "end_refund",  "type": "End", "prompt": "Route to billing specialist for refund." },
+    "end_billing": { "id": "end_billing", "type": "End", "prompt": "General billing support." },
+    "end_power":   { "id": "end_power",   "type": "End", "prompt": "Ask user to power-cycle and re-open ticket if not resolved." },
+    "end_windows": { "id": "end_windows", "type": "End", "prompt": "Windows Tier-2 queue." },
+    "end_linux":   { "id": "end_linux",   "type": "End", "prompt": "Linux SME queue." },
+    "end_generic": { "id": "end_generic", "type": "End", "prompt": "General triage team." },
+    "end_warranty":{ "id": "end_warranty","type": "End", "prompt": "In warranty. Route to warranty team." },
+    "end_oow":     { "id": "end_oow",     "type": "End", "prompt": "Out of warranty. Provide paid options." }
+  }
+}
