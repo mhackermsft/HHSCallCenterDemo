@@ -4,282 +4,475 @@
 @using RulesEditor.Services
 @inject DecisionTreeService TreeService
 
-<PageTitle>Decision Tree Builder</PageTitle>
+<PageTitle>Decision Tree Flow Builder</PageTitle>
+
+<style>
+    .flow-container {
+        padding: 20px;
+        background: #f8f9fa;
+        min-height: calc(100vh - 100px);
+        overflow-x: auto;
+    }
+    
+    .flow-node {
+        background: white;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 20px auto;
+        max-width: 600px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        position: relative;
+    }
+    
+    .flow-node.start-node {
+        border-color: #28a745;
+        border-width: 3px;
+    }
+    
+    .flow-node.end-node {
+        border-color: #dc3545;
+    }
+    
+    .flow-connector {
+        width: 2px;
+        height: 20px;
+        background: #6c757d;
+        margin: 0 auto;
+    }
+    
+    .flow-branch-container {
+        display: flex;
+        justify-content: center;
+        gap: 40px;
+        margin: 20px 0;
+    }
+    
+    .flow-branch {
+        flex: 1;
+        max-width: 300px;
+    }
+    
+    .branch-label {
+        background: #0d6efd;
+        color: white;
+        padding: 5px 10px;
+        border-radius: 4px;
+        text-align: center;
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+    }
+    
+    .node-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    
+    .node-actions {
+        display: flex;
+        gap: 5px;
+    }
+    
+    .add-node-button {
+        text-align: center;
+        padding: 20px;
+        margin: 10px auto;
+        max-width: 600px;
+    }
+    
+    .edit-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1050;
+    }
+    
+    .edit-modal-content {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        max-width: 600px;
+        width: 90%;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+</style>
 
 <div class="container-fluid">
-    <div class="row">
-        <div class="col-12 mb-3">
-            <h1>Decision Tree Builder</h1>
-            <p class="lead">Build your decision tree visually - no coding required</p>
+    <div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white border-bottom">
+        <div>
+            <h3 class="mb-0">Decision Tree Flow Builder</h3>
+            <small class="text-muted">Follow the flow from top to bottom</small>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-success" @onclick="SaveTree">
+                <i class="bi bi-save"></i> Save Tree
+            </button>
+            <label class="btn btn-info">
+                <i class="bi bi-upload"></i> Load
+                <InputFile OnChange="LoadFile" class="d-none" accept=".json" />
+            </label>
+            <button class="btn btn-secondary" @onclick="NewTree">
+                <i class="bi bi-file-earmark-plus"></i> New
+            </button>
         </div>
     </div>
 
-    <div class="row">
-        <!-- Tree Settings Panel -->
-        <div class="col-md-3">
-            <div class="card mb-3">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0"><i class="bi bi-gear"></i> Tree Settings</h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <label class="form-label">Tree ID</label>
-                        <input type="text" class="form-control" @bind="treeId" />
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Version</label>
-                        <input type="text" class="form-control" @bind="treeVersion" />
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Start Node</label>
-                        <select class="form-select" @bind="startNodeId">
-                            <option value="">-- Select Start Node --</option>
-                            @foreach (var node in nodes)
-                            {
-                                <option value="@node.Id">@node.Id</option>
-                            }
-                        </select>
-                    </div>
-                    <hr />
-                    <div class="d-grid gap-2">
-                        <button class="btn btn-success" @onclick="SaveTree">
-                            <i class="bi bi-save"></i> Save Tree
-                        </button>
-                        <label class="btn btn-info">
-                            <i class="bi bi-upload"></i> Load Tree
-                            <InputFile OnChange="LoadFile" class="d-none" accept=".json" />
-                        </label>
-                        <button class="btn btn-warning" @onclick="NewTree">
-                            <i class="bi bi-file-earmark-plus"></i> New Tree
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            @if (!string.IsNullOrEmpty(statusMessage))
-            {
-                <div class="alert @(isSuccess ? "alert-success" : "alert-danger")" role="alert">
-                    @statusMessage
-                </div>
-            }
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert @(isSuccess ? "alert-success" : "alert-danger") mx-3" role="alert">
+            @statusMessage
         </div>
+    }
 
-        <!-- Nodes List Panel -->
-        <div class="col-md-4">
-            <div class="card">
-                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-diagram-3"></i> Nodes</h5>
-                    <button class="btn btn-sm btn-light" @onclick="AddNewNode">
-                        <i class="bi bi-plus-circle"></i> Add Node
-                    </button>
-                </div>
-                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
-                    @if (!nodes.Any())
-                    {
-                        <div class="text-center text-muted py-4">
-                            <i class="bi bi-inbox" style="font-size: 3rem;"></i>
-                            <p>No nodes yet. Click "Add Node" to get started.</p>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="list-group">
-                            @foreach (var node in nodes)
-                            {
-                                <a href="javascript:void(0)" 
-                                   class="list-group-item list-group-item-action @(selectedNode == node ? "active" : "")"
-                                   @onclick="() => SelectNode(node)">
-                                    <div class="d-flex justify-content-between align-items-start">
-                                        <div class="flex-grow-1">
-                                            <span class="badge bg-@GetNodeTypeBadge(node.Type) me-2">@node.Type</span>
-                                            <strong>@node.Id</strong>
-                                            @if (node.Id == startNodeId)
-                                            {
-                                                <span class="badge bg-success ms-2">START</span>
-                                            }
-                                            <br />
-                                            <small class="text-muted">@GetNodeSummary(node)</small>
-                                        </div>
-                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteNode(node)" @onclick:stopPropagation="true">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </div>
-                                </a>
-                            }
-                        </div>
-                    }
-                </div>
+    <div class="flow-container">
+        @if (string.IsNullOrEmpty(startNodeId) || !nodes.Any())
+        {
+            <div class="text-center py-5">
+                <i class="bi bi-diagram-3" style="font-size: 4rem; color: #6c757d;"></i>
+                <h4 class="mt-3">No Decision Tree Yet</h4>
+                <p class="text-muted">Click "New Tree" or add your first node to get started</p>
+                <button class="btn btn-primary btn-lg" @onclick="() => AddNodeAtPosition(null, null)">
+                    <i class="bi bi-plus-circle"></i> Add First Node
+                </button>
             </div>
-        </div>
-
-        <!-- Node Editor Panel -->
-        <div class="col-md-5">
-            <div class="card">
-                <div class="card-header bg-success text-white">
-                    <h5 class="mb-0"><i class="bi bi-pencil"></i> Node Editor</h5>
-                </div>
-                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
-                    @if (selectedNode == null)
-                    {
-                        <div class="text-center text-muted py-5">
-                            <i class="bi bi-cursor" style="font-size: 3rem;"></i>
-                            <p>Select a node from the list to edit it</p>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="mb-3">
-                            <label class="form-label"><strong>Node ID</strong></label>
-                            <input type="text" class="form-control" @bind="selectedNode.Id" @bind:event="oninput" />
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label"><strong>Node Type</strong></label>
-                            <select class="form-select" @bind="selectedNode.Type" @bind:event="onchange">
-                                <option value="End">End - Terminal node</option>
-                                <option value="SingleChoice">Single Choice - Multiple options</option>
-                                <option value="Number">Number - Numeric evaluation</option>
-                            </select>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label"><strong>Prompt / Message</strong></label>
-                            <textarea class="form-control" rows="3" @bind="selectedNode.Prompt" @bind:event="oninput"></textarea>
-                            <small class="text-muted">The question or message for this node</small>
-                        </div>
-
-                        @if (selectedNode.Type == "SingleChoice")
-                        {
-                            <hr />
-                            <div class="mb-3">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label class="form-label mb-0"><strong>Choices</strong></label>
-                                    <button class="btn btn-sm btn-primary" @onclick="AddChoice">
-                                        <i class="bi bi-plus"></i> Add Choice
-                                    </button>
-                                </div>
-                                
-                                @if (selectedNode.Choices == null || !selectedNode.Choices.Any())
-                                {
-                                    <p class="text-muted">No choices yet</p>
-                                }
-                                else
-                                {
-                                    @for (int i = 0; i < selectedNode.Choices.Count; i++)
-                                    {
-                                        var index = i;
-                                        var choice = selectedNode.Choices[index];
-                                        <div class="card mb-2">
-                                            <div class="card-body p-2">
-                                                <div class="d-flex justify-content-between align-items-start mb-2">
-                                                    <small class="text-muted">Choice @(index + 1)</small>
-                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveChoice(index)">
-                                                        <i class="bi bi-x"></i>
-                                                    </button>
-                                                </div>
-                                                <input type="text" class="form-control form-control-sm mb-1" placeholder="Key (e.g., yes)" @bind="choice.Key" />
-                                                <input type="text" class="form-control form-control-sm mb-1" placeholder="Label (e.g., Yes, I agree)" @bind="choice.Label" />
-                                                <select class="form-select form-select-sm" @bind="choice.NextNodeId">
-                                                    <option value="">-- Select Next Node --</option>
-                                                    @foreach (var node in nodes)
-                                                    {
-                                                        <option value="@node.Id">@node.Id</option>
-                                                    }
-                                                </select>
-                                            </div>
-                                        </div>
-                                    }
-                                }
-                            </div>
-                        }
-
-                        @if (selectedNode.Type == "Number")
-                        {
-                            <hr />
-                            <div class="mb-3">
-                                <div class="d-flex justify-content-between align-items-center mb-2">
-                                    <label class="form-label mb-0"><strong>Rules</strong></label>
-                                    <button class="btn btn-sm btn-primary" @onclick="AddRule">
-                                        <i class="bi bi-plus"></i> Add Rule
-                                    </button>
-                                </div>
-                                
-                                @if (selectedNode.Rules == null || !selectedNode.Rules.Any())
-                                {
-                                    <p class="text-muted">No rules yet</p>
-                                }
-                                else
-                                {
-                                    @for (int i = 0; i < selectedNode.Rules.Count; i++)
-                                    {
-                                        var index = i;
-                                        var rule = selectedNode.Rules[index];
-                                        <div class="card mb-2">
-                                            <div class="card-body p-2">
-                                                <div class="d-flex justify-content-between align-items-start mb-2">
-                                                    <small class="text-muted">Rule @(index + 1)</small>
-                                                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveRule(index)">
-                                                        <i class="bi bi-x"></i>
-                                                    </button>
-                                                </div>
-                                                <select class="form-select form-select-sm mb-1" @bind="rule.Operator">
-                                                    <option value="">-- Select Operator --</option>
-                                                    <option value="LessThan">Less Than (&lt;)</option>
-                                                    <option value="LessThanOrEqual">Less Than or Equal (&lt;=)</option>
-                                                    <option value="GreaterThan">Greater Than (&gt;)</option>
-                                                    <option value="GreaterOrEqual">Greater Than or Equal (&gt;=)</option>
-                                                    <option value="Equal">Equal (=)</option>
-                                                </select>
-                                                <input type="number" class="form-control form-control-sm mb-1" placeholder="Value" @bind="rule.Value" />
-                                                <select class="form-select form-select-sm" @bind="rule.NextNodeId">
-                                                    <option value="">-- Select Next Node --</option>
-                                                    @foreach (var node in nodes)
-                                                    {
-                                                        <option value="@node.Id">@node.Id</option>
-                                                    }
-                                                </select>
-                                            </div>
-                                        </div>
-                                    }
-                                }
-                            </div>
-                        }
-
-                        @if (selectedNode.Type != "End")
-                        {
-                            <hr />
-                            <div class="mb-3">
-                                <label class="form-label"><strong>Default Next Node</strong></label>
-                                <select class="form-select" @bind="selectedNode.DefaultNextNodeId">
-                                    <option value="">-- None (optional) --</option>
-                                    @foreach (var node in nodes)
-                                    {
-                                        <option value="@node.Id">@node.Id</option>
-                                    }
-                                </select>
-                                <small class="text-muted">Used when no choice/rule matches</small>
-                            </div>
-                        }
-                    }
-                </div>
-            </div>
-        </div>
+        }
+        else
+        {
+            @RenderNodeFlow(startNodeId, null)
+        }
     </div>
 </div>
+
+@if (editingNode != null)
+{
+    <div class="edit-modal" @onclick="CloseEditModal">
+        <div class="edit-modal-content" @onclick:stopPropagation="true">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Edit Node</h5>
+                <button class="btn-close" @onclick="CloseEditModal"></button>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label"><strong>Node ID</strong></label>
+                <input type="text" class="form-control" @bind="editingNode.Id" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label"><strong>Node Type</strong></label>
+                <select class="form-select" @bind="editingNode.Type">
+                    <option value="End">End - Terminal node</option>
+                    <option value="SingleChoice">Single Choice - Multiple options</option>
+                    <option value="Number">Number - Numeric evaluation</option>
+                </select>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label"><strong>Prompt / Message</strong></label>
+                <textarea class="form-control" rows="3" @bind="editingNode.Prompt"></textarea>
+            </div>
+
+            @if (editingNode.Type == "SingleChoice")
+            {
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0"><strong>Choices</strong></label>
+                        <button class="btn btn-sm btn-primary" @onclick="AddChoice">
+                            <i class="bi bi-plus"></i> Add Choice
+                        </button>
+                    </div>
+                    
+                    @if (editingNode.Choices != null && editingNode.Choices.Any())
+                    {
+                        @for (int i = 0; i < editingNode.Choices.Count; i++)
+                        {
+                            var index = i;
+                            var choice = editingNode.Choices[index];
+                            <div class="card mb-2">
+                                <div class="card-body p-2">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <small class="text-muted">Choice @(index + 1)</small>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveChoice(index)">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                    <input type="text" class="form-control form-control-sm mb-1" placeholder="Key" @bind="choice.Key" />
+                                    <input type="text" class="form-control form-control-sm mb-1" placeholder="Label" @bind="choice.Label" />
+                                    <select class="form-select form-select-sm" @bind="choice.NextNodeId">
+                                        <option value="">-- Select Next Node --</option>
+                                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id))
+                                        {
+                                            <option value="@node.Id">@node.Id</option>
+                                        }
+                                        <option value="_new_">+ Create New Node</option>
+                                    </select>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            @if (editingNode.Type == "Number")
+            {
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label mb-0"><strong>Rules</strong></label>
+                        <button class="btn btn-sm btn-primary" @onclick="AddRule">
+                            <i class="bi bi-plus"></i> Add Rule
+                        </button>
+                    </div>
+                    
+                    @if (editingNode.Rules != null && editingNode.Rules.Any())
+                    {
+                        @for (int i = 0; i < editingNode.Rules.Count; i++)
+                        {
+                            var index = i;
+                            var rule = editingNode.Rules[index];
+                            <div class="card mb-2">
+                                <div class="card-body p-2">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <small class="text-muted">Rule @(index + 1)</small>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveRule(index)">
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </div>
+                                    <select class="form-select form-select-sm mb-1" @bind="rule.Operator">
+                                        <option value="LessThan">Less Than (&lt;)</option>
+                                        <option value="LessThanOrEqual">Less Than or Equal (&lt;=)</option>
+                                        <option value="GreaterThan">Greater Than (&gt;)</option>
+                                        <option value="GreaterOrEqual">Greater Than or Equal (&gt;=)</option>
+                                        <option value="Equal">Equal (=)</option>
+                                    </select>
+                                    <input type="number" class="form-control form-control-sm mb-1" placeholder="Value" @bind="rule.Value" />
+                                    <select class="form-select form-select-sm" @bind="rule.NextNodeId">
+                                        <option value="">-- Select Next Node --</option>
+                                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id))
+                                        {
+                                            <option value="@node.Id">@node.Id</option>
+                                        }
+                                        <option value="_new_">+ Create New Node</option>
+                                    </select>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+
+            <div class="d-flex gap-2 justify-content-end">
+                <button class="btn btn-secondary" @onclick="CloseEditModal">Close</button>
+                <button class="btn btn-primary" @onclick="SaveEditedNode">Save Changes</button>
+            </div>
+        </div>
+    </div>
+}
 
 @code {
     private string treeId = "my-decision-tree";
     private string treeVersion = "1.0.0";
     private string startNodeId = "";
     private List<DecisionNode> nodes = new();
-    private DecisionNode? selectedNode = null;
+    private DecisionNode? editingNode = null;
     private string statusMessage = "";
     private bool isSuccess = false;
+    private HashSet<string> renderedNodes = new();
 
     protected override void OnInitialized()
     {
-        // Start with a simple example
         LoadExampleTree();
+    }
+
+    private RenderFragment RenderNodeFlow(string nodeId, string? parentBranchLabel) => builder =>
+    {
+        if (string.IsNullOrEmpty(nodeId) || renderedNodes.Contains(nodeId))
+            return;
+
+        var node = nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (node == null)
+            return;
+
+        renderedNodes.Add(nodeId);
+
+        // Render connector from parent
+        if (parentBranchLabel != null)
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "flow-connector");
+            builder.CloseElement();
+        }
+
+        // Render the node
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", $"flow-node {(node.Id == startNodeId ? "start-node" : "")} {(node.Type == "End" ? "end-node" : "")}");
+        
+        // Node header
+        builder.OpenElement(4, "div");
+        builder.AddAttribute(5, "class", "node-header");
+        
+        builder.OpenElement(6, "div");
+        builder.OpenElement(7, "span");
+        builder.AddAttribute(8, "class", $"badge bg-{GetNodeTypeBadge(node.Type)} me-2");
+        builder.AddContent(9, node.Type);
+        builder.CloseElement();
+        builder.OpenElement(10, "strong");
+        builder.AddContent(11, node.Id);
+        builder.CloseElement();
+        if (node.Id == startNodeId)
+        {
+            builder.OpenElement(12, "span");
+            builder.AddAttribute(13, "class", "badge bg-success ms-2");
+            builder.AddContent(14, "START");
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        
+        // Actions
+        builder.OpenElement(15, "div");
+        builder.AddAttribute(16, "class", "node-actions");
+        builder.OpenElement(17, "button");
+        builder.AddAttribute(18, "class", "btn btn-sm btn-primary");
+        builder.AddAttribute(19, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
+        builder.OpenElement(20, "i");
+        builder.AddAttribute(21, "class", "bi bi-pencil");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.OpenElement(22, "button");
+        builder.AddAttribute(23, "class", "btn btn-sm btn-danger");
+        builder.AddAttribute(24, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
+        builder.OpenElement(25, "i");
+        builder.AddAttribute(26, "class", "bi bi-trash");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+        
+        builder.CloseElement(); // node-header
+        
+        // Node content
+        builder.OpenElement(27, "div");
+        builder.AddAttribute(28, "class", "mt-2");
+        builder.AddContent(29, node.Prompt);
+        builder.CloseElement();
+        
+        builder.CloseElement(); // flow-node
+
+        // Handle branching for non-End nodes
+        if (node.Type != "End")
+        {
+            var branches = GetNodeBranches(node);
+            if (branches.Any())
+            {
+                builder.OpenElement(30, "div");
+                builder.AddAttribute(31, "class", "flow-connector");
+                builder.CloseElement();
+
+                if (branches.Count > 1)
+                {
+                    builder.OpenElement(32, "div");
+                    builder.AddAttribute(33, "class", "flow-branch-container");
+                    
+                    foreach (var branch in branches)
+                    {
+                        builder.OpenElement(34, "div");
+                        builder.AddAttribute(35, "class", "flow-branch");
+                        
+                        builder.OpenElement(36, "div");
+                        builder.AddAttribute(37, "class", "branch-label");
+                        builder.AddContent(38, branch.Label);
+                        builder.CloseElement();
+                        
+                        var previousRendered = new HashSet<string>(renderedNodes);
+                        builder.AddContent(39, RenderNodeFlow(branch.NextNodeId, branch.Label));
+                        
+                        // Add button to add node in this branch
+                        if (string.IsNullOrEmpty(branch.NextNodeId))
+                        {
+                            builder.OpenElement(40, "div");
+                            builder.AddAttribute(41, "class", "add-node-button");
+                            builder.OpenElement(42, "button");
+                            builder.AddAttribute(43, "class", "btn btn-outline-primary");
+                            builder.AddAttribute(44, "onclick", EventCallback.Factory.Create(this, () => AddNodeAtPosition(node.Id, branch.Label)));
+                            builder.OpenElement(45, "i");
+                            builder.AddAttribute(46, "class", "bi bi-plus-circle");
+                            builder.CloseElement();
+                            builder.AddContent(47, " Add Node Here");
+                            builder.CloseElement();
+                            builder.CloseElement();
+                        }
+                        
+                        builder.CloseElement(); // flow-branch
+                    }
+                    
+                    builder.CloseElement(); // flow-branch-container
+                }
+                else
+                {
+                    // Single path
+                    var branch = branches.First();
+                    builder.AddContent(48, RenderNodeFlow(branch.NextNodeId, null));
+                    
+                    if (string.IsNullOrEmpty(branch.NextNodeId))
+                    {
+                        builder.OpenElement(49, "div");
+                        builder.AddAttribute(50, "class", "add-node-button");
+                        builder.OpenElement(51, "button");
+                        builder.AddAttribute(52, "class", "btn btn-outline-primary btn-lg");
+                        builder.AddAttribute(53, "onclick", EventCallback.Factory.Create(this, () => AddNodeAtPosition(node.Id, null)));
+                        builder.OpenElement(54, "i");
+                        builder.AddAttribute(55, "class", "bi bi-plus-circle");
+                        builder.CloseElement();
+                        builder.AddContent(56, " Add Node Here");
+                        builder.CloseElement();
+                        builder.CloseElement();
+                    }
+                }
+            }
+            else
+            {
+                // No branches defined yet - offer to add
+                builder.OpenElement(57, "div");
+                builder.AddAttribute(58, "class", "add-node-button");
+                builder.OpenElement(59, "button");
+                builder.AddAttribute(60, "class", "btn btn-outline-primary btn-lg");
+                builder.AddAttribute(61, "onclick", EventCallback.Factory.Create(this, () => AddNodeAtPosition(node.Id, null)));
+                builder.OpenElement(62, "i");
+                builder.AddAttribute(63, "class", "bi bi-plus-circle");
+                builder.CloseElement();
+                builder.AddContent(64, " Add Node Here");
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+        }
+    };
+
+    private List<(string Label, string NextNodeId)> GetNodeBranches(DecisionNode node)
+    {
+        var branches = new List<(string Label, string NextNodeId)>();
+        
+        if (node.Type == "SingleChoice" && node.Choices != null)
+        {
+            foreach (var choice in node.Choices)
+            {
+                branches.Add((choice.Label, choice.NextNodeId ?? ""));
+            }
+        }
+        else if (node.Type == "Number" && node.Rules != null)
+        {
+            foreach (var rule in node.Rules)
+            {
+                branches.Add(($"{rule.Operator} {rule.Value}", rule.NextNodeId ?? ""));
+            }
+        }
+        
+        return branches;
     }
 
     private void LoadExampleTree()
@@ -314,9 +507,11 @@
                 Prompt = "We'll help you resolve your issue."
             }
         };
+        
+        renderedNodes.Clear();
     }
 
-    private void AddNewNode()
+    private void AddNodeAtPosition(string? parentNodeId, string? branchLabel)
     {
         var newNode = new DecisionNode
         {
@@ -325,35 +520,96 @@
             Prompt = "Enter your prompt here"
         };
         nodes.Add(newNode);
-        selectedNode = newNode;
+        
+        if (parentNodeId != null)
+        {
+            var parentNode = nodes.FirstOrDefault(n => n.Id == parentNodeId);
+            if (parentNode != null)
+            {
+                if (parentNode.Type == "SingleChoice")
+                {
+                    var choice = parentNode.Choices?.FirstOrDefault(c => c.Label == branchLabel);
+                    if (choice != null)
+                    {
+                        choice.NextNodeId = newNode.Id;
+                    }
+                }
+                else if (parentNode.Type == "Number")
+                {
+                    var rule = parentNode.Rules?.FirstOrDefault(r => $"{r.Operator} {r.Value}" == branchLabel);
+                    if (rule != null)
+                    {
+                        rule.NextNodeId = newNode.Id;
+                    }
+                }
+            }
+        }
+        else if (string.IsNullOrEmpty(startNodeId))
+        {
+            startNodeId = newNode.Id;
+        }
+        
+        editingNode = newNode;
+        renderedNodes.Clear();
     }
 
-    private void SelectNode(DecisionNode node)
+    private void EditNode(DecisionNode node)
     {
-        selectedNode = node;
+        editingNode = node;
+    }
+
+    private void CloseEditModal()
+    {
+        editingNode = null;
+        renderedNodes.Clear();
+    }
+
+    private void SaveEditedNode()
+    {
+        editingNode = null;
+        renderedNodes.Clear();
     }
 
     private void DeleteNode(DecisionNode node)
     {
         nodes.Remove(node);
-        if (selectedNode == node)
-        {
-            selectedNode = null;
-        }
         if (startNodeId == node.Id)
         {
-            startNodeId = "";
+            startNodeId = nodes.Any() ? nodes.First().Id : "";
         }
+        
+        // Remove references to this node
+        foreach (var n in nodes)
+        {
+            if (n.Choices != null)
+            {
+                foreach (var choice in n.Choices)
+                {
+                    if (choice.NextNodeId == node.Id)
+                        choice.NextNodeId = "";
+                }
+            }
+            if (n.Rules != null)
+            {
+                foreach (var rule in n.Rules)
+                {
+                    if (rule.NextNodeId == node.Id)
+                        rule.NextNodeId = "";
+                }
+            }
+        }
+        
+        renderedNodes.Clear();
     }
 
     private void AddChoice()
     {
-        if (selectedNode != null)
+        if (editingNode != null)
         {
-            selectedNode.Choices ??= new List<Choice>();
-            selectedNode.Choices.Add(new Choice 
+            editingNode.Choices ??= new List<Choice>();
+            editingNode.Choices.Add(new Choice 
             { 
-                Key = $"choice{selectedNode.Choices.Count + 1}",
+                Key = $"choice{editingNode.Choices.Count + 1}",
                 Label = "New Choice",
                 NextNodeId = ""
             });
@@ -362,18 +618,18 @@
 
     private void RemoveChoice(int index)
     {
-        if (selectedNode?.Choices != null && index < selectedNode.Choices.Count)
+        if (editingNode?.Choices != null && index < editingNode.Choices.Count)
         {
-            selectedNode.Choices.RemoveAt(index);
+            editingNode.Choices.RemoveAt(index);
         }
     }
 
     private void AddRule()
     {
-        if (selectedNode != null)
+        if (editingNode != null)
         {
-            selectedNode.Rules ??= new List<Rule>();
-            selectedNode.Rules.Add(new Rule 
+            editingNode.Rules ??= new List<Rule>();
+            editingNode.Rules.Add(new Rule 
             { 
                 Operator = "LessThan",
                 Value = "0",
@@ -384,9 +640,9 @@
 
     private void RemoveRule(int index)
     {
-        if (selectedNode?.Rules != null && index < selectedNode.Rules.Count)
+        if (editingNode?.Rules != null && index < editingNode.Rules.Count)
         {
-            selectedNode.Rules.RemoveAt(index);
+            editingNode.Rules.RemoveAt(index);
         }
     }
 
@@ -396,8 +652,9 @@
         treeVersion = "1.0.0";
         startNodeId = "";
         nodes.Clear();
-        selectedNode = null;
+        editingNode = null;
         statusMessage = "";
+        renderedNodes.Clear();
     }
 
     private async Task LoadFile(InputFileChangeEventArgs e)
@@ -418,9 +675,10 @@
                 treeVersion = result.Tree.Version;
                 startNodeId = result.Tree.StartNodeId;
                 nodes = result.Tree.Nodes.Values.ToList();
-                selectedNode = null;
+                editingNode = null;
                 statusMessage = "Tree loaded successfully!";
                 isSuccess = true;
+                renderedNodes.Clear();
             }
             else
             {
@@ -448,7 +706,7 @@
             };
 
             var json = TreeService.SerializeToJson(tree);
-            var result = TreeService.LoadFromJson(json); // Validate
+            var result = TreeService.LoadFromJson(json);
             
             if (result.Success)
             {
@@ -484,18 +742,4 @@
         "Number" => "warning",
         _ => "secondary"
     };
-
-    private string GetNodeSummary(DecisionNode node)
-    {
-        if (node.Type == "End")
-            return node.Prompt?.Length > 50 ? node.Prompt.Substring(0, 50) + "..." : node.Prompt ?? "";
-        
-        if (node.Type == "SingleChoice")
-            return $"{node.Choices?.Count ?? 0} choices";
-        
-        if (node.Type == "Number")
-            return $"{node.Rules?.Count ?? 0} rules";
-        
-        return "";
-    }
 }
