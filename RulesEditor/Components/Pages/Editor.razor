@@ -8,47 +8,69 @@
 
 <style>
     .flow-container {
-        padding: 20px;
+        padding: 40px 20px;
         background: #f8f9fa;
         min-height: calc(100vh - 100px);
         overflow-x: auto;
-        display: flex;
-        justify-content: center;
     }
     
-    .tree-root {
+    .tree-container {
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding: 20px;
+        gap: 30px;
     }
     
-    .tree-node-card {
-        background: white;
-        border: 2px solid #dee2e6;
-        border-radius: 8px;
-        padding: 20px;
-        margin: 10px;
-        min-width: 300px;
-        max-width: 500px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    .tree-row {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 30px;
+        flex-wrap: wrap;
         position: relative;
     }
     
-    .tree-node-card.start-node {
+    .tree-node-wrapper {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+    }
+    
+    .tree-node-box {
+        background: white;
+        border: 2px solid #0d6efd;
+        border-radius: 10px;
+        padding: 20px;
+        min-width: 250px;
+        max-width: 400px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        text-align: center;
+        position: relative;
+    }
+    
+    .tree-node-box.start-node {
         border-color: #28a745;
         border-width: 3px;
     }
     
-    .tree-node-card.end-node {
+    .tree-node-box.end-node {
         border-color: #dc3545;
+        background: #fff5f5;
+    }
+    
+    .tree-node-box.answer-box {
+        background: #e7f3ff;
+        border-color: #0d6efd;
+        min-width: 200px;
+        font-weight: 500;
     }
     
     .node-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
     }
     
     .node-actions {
@@ -57,72 +79,46 @@
     }
     
     .node-prompt {
-        font-size: 16px;
-        margin: 10px 0;
+        font-size: 15px;
+        margin: 8px 0;
         color: #212529;
     }
     
-    .branches-container {
-        display: flex;
-        justify-content: center;
-        gap: 40px;
-        margin-top: 20px;
-        flex-wrap: wrap;
-    }
-    
-    .branch-path {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        position: relative;
-    }
-    
-    .connector-line {
+    .connector-down {
         width: 2px;
-        height: 40px;
+        height: 30px;
         background: #6c757d;
         margin: 0 auto;
     }
     
-    .connector-split {
-        width: 100%;
-        height: 2px;
+    .connector-up {
+        width: 2px;
+        height: 30px;
         background: #6c757d;
-        position: relative;
-        margin: 10px 0;
-    }
-    
-    .branch-label-box {
-        background: #0d6efd;
-        color: white;
-        padding: 10px 20px;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: 500;
-        margin: 10px 0;
-        text-align: center;
-        min-width: 150px;
+        position: absolute;
+        top: -30px;
+        left: 50%;
+        transform: translateX(-1px);
     }
     
     .add-node-box {
         border: 2px dashed #6c757d;
         background: #f8f9fa;
-        padding: 30px 40px;
+        padding: 20px 30px;
         border-radius: 8px;
         text-align: center;
-        margin: 10px;
-        min-width: 300px;
+        min-width: 200px;
     }
     
     .flow-reference {
-        background: #e9ecef;
-        border: 2px dashed #6c757d;
+        background: #fff3cd;
+        border: 2px dashed #856404;
         padding: 15px;
         border-radius: 8px;
         text-align: center;
         font-style: italic;
-        margin: 10px;
-        min-width: 300px;
+        min-width: 200px;
+        font-size: 14px;
     }
     
     .edit-modal {
@@ -190,8 +186,8 @@
         }
         else
         {
-            <div class="tree-root">
-                @RenderTreeNode(startNodeId)
+            <div class="tree-container">
+                @RenderTreeByLevels()
             </div>
         }
     </div>
@@ -336,73 +332,178 @@
         LoadExampleTree();
     }
 
-    private RenderFragment RenderTreeNode(string nodeId) => builder =>
+    private class TreeLevel
     {
-        if (string.IsNullOrEmpty(nodeId))
-            return;
-
+        public List<TreeItem> Items { get; set; } = new();
+    }
+    
+    private class TreeItem
+    {
+        public string? NodeId { get; set; }
+        public string? BranchLabel { get; set; }
+        public string? ParentNodeId { get; set; }
+        public bool IsAnswerBox { get; set; }
+    }
+    
+    private RenderFragment RenderTreeByLevels() => builder =>
+    {
+        var levels = BuildTreeLevels();
+        
+        foreach (var level in levels)
+        {
+            // Render connector from previous level (except for first level)
+            if (levels.IndexOf(level) > 0)
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "connector-down");
+                builder.CloseElement();
+            }
+            
+            // Render the row
+            builder.OpenElement(2, "div");
+            builder.AddAttribute(3, "class", "tree-row");
+            
+            foreach (var item in level.Items)
+            {
+                if (item.IsAnswerBox)
+                {
+                    // This is an answer/choice box
+                    builder.OpenElement(4, "div");
+                    builder.AddAttribute(5, "class", "tree-node-wrapper");
+                    
+                    builder.OpenElement(6, "div");
+                    builder.AddAttribute(7, "class", "tree-node-box answer-box");
+                    builder.AddContent(8, item.BranchLabel);
+                    builder.CloseElement();
+                    
+                    builder.CloseElement(); // wrapper
+                }
+                else if (!string.IsNullOrEmpty(item.NodeId))
+                {
+                    // This is a question node
+                    builder.AddContent(9, RenderNodeBox(item.NodeId));
+                }
+            }
+            
+            builder.CloseElement(); // tree-row
+        }
+    };
+    
+    private List<TreeLevel> BuildTreeLevels()
+    {
+        var levels = new List<TreeLevel>();
+        var processedNodes = new HashSet<string>();
+        var queue = new Queue<(string nodeId, int level)>();
+        
+        if (!string.IsNullOrEmpty(startNodeId))
+        {
+            queue.Enqueue((startNodeId, 0));
+        }
+        
+        while (queue.Count > 0)
+        {
+            var (nodeId, levelIndex) = queue.Dequeue();
+            
+            if (processedNodes.Contains(nodeId))
+                continue;
+                
+            processedNodes.Add(nodeId);
+            
+            // Ensure we have enough levels
+            while (levels.Count <= levelIndex)
+            {
+                levels.Add(new TreeLevel());
+            }
+            
+            // Add this node to the current level
+            levels[levelIndex].Items.Add(new TreeItem { NodeId = nodeId });
+            
+            // Get branches
+            var node = nodes.FirstOrDefault(n => n.Id == nodeId);
+            if (node != null && node.Type != "End")
+            {
+                var branches = GetNodeBranches(node);
+                if (branches.Any())
+                {
+                    // Add answer boxes to next level
+                    var answerLevel = levelIndex + 1;
+                    while (levels.Count <= answerLevel)
+                    {
+                        levels.Add(new TreeLevel());
+                    }
+                    
+                    foreach (var branch in branches)
+                    {
+                        // Add answer box
+                        levels[answerLevel].Items.Add(new TreeItem 
+                        { 
+                            BranchLabel = branch.Label,
+                            ParentNodeId = nodeId,
+                            IsAnswerBox = true
+                        });
+                        
+                        // Queue the next node if it exists
+                        if (!string.IsNullOrEmpty(branch.NextNodeId))
+                        {
+                            queue.Enqueue((branch.NextNodeId, levelIndex + 2));
+                        }
+                    }
+                }
+            }
+        }
+        
+        return levels;
+    }
+    
+    private RenderFragment RenderNodeBox(string nodeId) => builder =>
+    {
         var node = nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
             return;
-
-        // If already rendered, show a reference
-        if (renderedNodes.Contains(nodeId))
-        {
-            builder.OpenElement(0, "div");
-            builder.AddAttribute(1, "class", "flow-reference");
-            builder.OpenElement(2, "small");
-            builder.AddContent(3, $"→ Continues at ");
-            builder.OpenElement(4, "strong");
-            builder.AddContent(5, nodeId);
-            builder.CloseElement();
-            builder.AddContent(6, " (see above)");
-            builder.CloseElement();
-            builder.CloseElement();
-            return;
-        }
-
-        renderedNodes.Add(nodeId);
-
-        // Render the node card
-        builder.OpenElement(10, "div");
-        builder.AddAttribute(11, "class", $"tree-node-card {(node.Id == startNodeId ? "start-node" : "")} {(node.Type == "End" ? "end-node" : "")}");
+            
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "tree-node-wrapper");
+        
+        builder.OpenElement(2, "div");
+        builder.AddAttribute(3, "class", $"tree-node-box {(node.Id == startNodeId ? "start-node" : "")} {(node.Type == "End" ? "end-node" : "")}");
         
         // Node header with badge and actions
-        builder.OpenElement(12, "div");
-        builder.AddAttribute(13, "class", "node-header");
+        builder.OpenElement(4, "div");
+        builder.AddAttribute(5, "class", "node-header");
         
-        builder.OpenElement(14, "div");
-        builder.OpenElement(15, "span");
-        builder.AddAttribute(16, "class", $"badge bg-{GetNodeTypeBadge(node.Type)} me-2");
-        builder.AddContent(17, node.Type);
+        builder.OpenElement(6, "div");
+        builder.OpenElement(7, "span");
+        builder.AddAttribute(8, "class", $"badge bg-{GetNodeTypeBadge(node.Type)} me-2");
+        builder.AddContent(9, node.Type);
         builder.CloseElement();
-        builder.OpenElement(18, "strong");
-        builder.AddContent(19, node.Id);
+        builder.OpenElement(10, "strong");
+        builder.AddAttribute(11, "style", "font-size: 12px;");
+        builder.AddContent(12, node.Id);
         builder.CloseElement();
         if (node.Id == startNodeId)
         {
-            builder.OpenElement(20, "span");
-            builder.AddAttribute(21, "class", "badge bg-success ms-2");
-            builder.AddContent(22, "START");
+            builder.OpenElement(13, "span");
+            builder.AddAttribute(14, "class", "badge bg-success ms-2");
+            builder.AddContent(15, "START");
             builder.CloseElement();
         }
         builder.CloseElement();
         
         // Actions
-        builder.OpenElement(23, "div");
-        builder.AddAttribute(24, "class", "node-actions");
-        builder.OpenElement(25, "button");
-        builder.AddAttribute(26, "class", "btn btn-sm btn-primary");
-        builder.AddAttribute(27, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
-        builder.OpenElement(28, "i");
-        builder.AddAttribute(29, "class", "bi bi-pencil");
+        builder.OpenElement(16, "div");
+        builder.AddAttribute(17, "class", "node-actions");
+        builder.OpenElement(18, "button");
+        builder.AddAttribute(19, "class", "btn btn-sm btn-primary");
+        builder.AddAttribute(20, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
+        builder.OpenElement(21, "i");
+        builder.AddAttribute(22, "class", "bi bi-pencil");
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(30, "button");
-        builder.AddAttribute(31, "class", "btn btn-sm btn-danger");
-        builder.AddAttribute(32, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
-        builder.OpenElement(33, "i");
-        builder.AddAttribute(34, "class", "bi bi-trash");
+        builder.OpenElement(23, "button");
+        builder.AddAttribute(24, "class", "btn btn-sm btn-danger");
+        builder.AddAttribute(25, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
+        builder.OpenElement(26, "i");
+        builder.AddAttribute(27, "class", "bi bi-trash");
         builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
@@ -410,127 +511,13 @@
         builder.CloseElement(); // node-header
         
         // Node prompt
-        builder.OpenElement(35, "div");
-        builder.AddAttribute(36, "class", "node-prompt");
-        builder.AddContent(37, node.Prompt);
+        builder.OpenElement(28, "div");
+        builder.AddAttribute(29, "class", "node-prompt");
+        builder.AddContent(30, node.Prompt);
         builder.CloseElement();
         
-        builder.CloseElement(); // tree-node-card
-
-        // Handle branching for non-End nodes
-        if (node.Type != "End")
-        {
-            var branches = GetNodeBranches(node);
-            if (branches.Any())
-            {
-                // Connector line down
-                builder.OpenElement(40, "div");
-                builder.AddAttribute(41, "class", "connector-line");
-                builder.CloseElement();
-
-                if (branches.Count > 1)
-                {
-                    // Horizontal connector for split
-                    builder.OpenElement(42, "div");
-                    builder.AddAttribute(43, "class", "connector-split");
-                    builder.AddAttribute(44, "style", $"width: {Math.Min(branches.Count * 250, 800)}px;");
-                    builder.CloseElement();
-                    
-                    // Branch containers side by side
-                    builder.OpenElement(45, "div");
-                    builder.AddAttribute(46, "class", "branches-container");
-                    
-                    foreach (var branch in branches)
-                    {
-                        builder.OpenElement(47, "div");
-                        builder.AddAttribute(48, "class", "branch-path");
-                        
-                        // Connector down to label
-                        builder.OpenElement(49, "div");
-                        builder.AddAttribute(50, "class", "connector-line");
-                        builder.CloseElement();
-                        
-                        // Branch label
-                        builder.OpenElement(51, "div");
-                        builder.AddAttribute(52, "class", "branch-label-box");
-                        builder.AddContent(53, branch.Label);
-                        builder.CloseElement();
-                        
-                        // Connector down from label
-                        builder.OpenElement(54, "div");
-                        builder.AddAttribute(55, "class", "connector-line");
-                        builder.CloseElement();
-                        
-                        // Next node or add button
-                        if (!string.IsNullOrEmpty(branch.NextNodeId))
-                        {
-                            builder.AddContent(56, RenderTreeNode(branch.NextNodeId));
-                        }
-                        else
-                        {
-                            builder.OpenElement(57, "div");
-                            builder.AddAttribute(58, "class", "add-node-box");
-                            builder.OpenElement(59, "button");
-                            builder.AddAttribute(60, "class", "btn btn-outline-primary");
-                            builder.AddAttribute(61, "onclick", EventCallback.Factory.Create(this, () => AddNodeAtPosition(node.Id, branch.Label)));
-                            builder.OpenElement(62, "i");
-                            builder.AddAttribute(63, "class", "bi bi-plus-circle");
-                            builder.CloseElement();
-                            builder.AddContent(64, " Add Node");
-                            builder.CloseElement();
-                            builder.CloseElement();
-                        }
-                        
-                        builder.CloseElement(); // branch-path
-                    }
-                    
-                    builder.CloseElement(); // branches-container
-                }
-                else
-                {
-                    // Single path - just continue down
-                    var branch = branches.First();
-                    
-                    if (!string.IsNullOrEmpty(branch.NextNodeId))
-                    {
-                        builder.AddContent(65, RenderTreeNode(branch.NextNodeId));
-                    }
-                    else
-                    {
-                        builder.OpenElement(66, "div");
-                        builder.AddAttribute(67, "class", "add-node-box");
-                        builder.OpenElement(68, "button");
-                        builder.AddAttribute(69, "class", "btn btn-outline-primary btn-lg");
-                        builder.AddAttribute(70, "onclick", EventCallback.Factory.Create(this, () => AddNodeAtPosition(node.Id, null)));
-                        builder.OpenElement(71, "i");
-                        builder.AddAttribute(72, "class", "bi bi-plus-circle");
-                        builder.CloseElement();
-                        builder.AddContent(73, " Add Node Here");
-                        builder.CloseElement();
-                        builder.CloseElement();
-                    }
-                }
-            }
-            else
-            {
-                // No branches defined yet - offer to add
-                builder.OpenElement(74, "div");
-                builder.AddAttribute(75, "class", "connector-line");
-                builder.CloseElement();
-                
-                builder.OpenElement(76, "div");
-                builder.AddAttribute(77, "class", "add-node-box");
-                builder.OpenElement(78, "button");
-                builder.AddAttribute(79, "class", "btn btn-outline-primary btn-lg");
-                builder.AddAttribute(80, "onclick", EventCallback.Factory.Create(this, () => AddNodeAtPosition(node.Id, null)));
-                builder.OpenElement(81, "i");
-                builder.AddAttribute(82, "class", "bi bi-plus-circle");
-                builder.CloseElement();
-                builder.AddContent(83, " Add Node Here");
-                builder.CloseElement();
-                builder.CloseElement();
-            }
-        }
+        builder.CloseElement(); // tree-node-box
+        builder.CloseElement(); // wrapper
     };
 
     private List<(string Label, string NextNodeId)> GetNodeBranches(DecisionNode node)
