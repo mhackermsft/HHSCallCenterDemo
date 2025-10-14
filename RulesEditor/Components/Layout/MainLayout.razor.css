@@ -1,11 +1,19 @@
 .page {
-    position: relative;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 main {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .sidebar {
@@ -19,6 +27,7 @@ main {
     height: 3.5rem;
     display: flex;
     align-items: center;
+    flex-shrink: 0;
 }
 
     .top-row ::deep a, .top-row ::deep .btn-link {
@@ -46,6 +55,12 @@ main {
     }
 }
 
+article.content {
+    flex: 1;
+    overflow: auto;
+    padding: 1rem;
+}
+
 @media (min-width: 641px) {
     .page {
         flex-direction: row;
@@ -54,13 +69,16 @@ main {
     .sidebar {
         width: 250px;
         height: 100vh;
-        position: sticky;
-        top: 0;
+        flex-shrink: 0;
+    }
+
+    main {
+        flex: 1;
+        overflow: hidden;
     }
 
     .top-row {
-        position: sticky;
-        top: 0;
+        flex-shrink: 0;
         z-index: 1;
     }
 
@@ -70,7 +88,12 @@ main {
         width: 0;
     }
 
-    .top-row, article {
+    .top-row {
+        padding-left: 2rem !important;
+        padding-right: 1.5rem !important;
+    }
+
+    article.content {
         padding-left: 2rem !important;
         padding-right: 1.5rem !important;
     }
