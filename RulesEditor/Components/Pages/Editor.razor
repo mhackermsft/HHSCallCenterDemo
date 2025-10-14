@@ -17,10 +17,10 @@
     
     .flowchart-canvas {
         position: relative;
-        min-height: 2000px;
-        min-width: 4000px;
-        padding: 60px;
-        padding-left: 350px; /* Extra space on left to avoid nav menu overlap */
+        min-height: 2500px;
+        min-width: 5000px;
+        padding: 80px;
+        padding-left: 500px; /* Extra space on left to avoid nav menu overlap */
     }
     
     .flowchart-node {
@@ -368,12 +368,14 @@
         
         if (string.IsNullOrEmpty(startNodeId)) return;
         
-        int currentY = 80;
-        int centerX = 1000; // Center more to the right to accommodate wider trees and left nav
+        int currentY = 100;
         
         // First pass: calculate tree width needed
         var subtreeWidths = new Dictionary<string, int>();
-        CalculateSubtreeWidths(startNodeId, new HashSet<string>(), subtreeWidths);
+        int totalTreeWidth = CalculateSubtreeWidths(startNodeId, new HashSet<string>(), subtreeWidths);
+        
+        // Position start node centered based on total tree width
+        int centerX = Math.Max(1200, (totalTreeWidth / 2) + 500); // Ensure enough left margin
         
         // Second pass: position nodes with proper spacing
         CalculateNodePositions(startNodeId, centerX, currentY, new HashSet<string>(), subtreeWidths);
@@ -389,13 +391,13 @@
         visited.Add(nodeId);
         
         var node = nodes.FirstOrDefault(n => n.Id == nodeId);
-        if (node == null) return 350; // Default width for missing nodes
+        if (node == null) return 400; // Default width for missing nodes
         
         var branches = GetNodeBranches(node);
         if (!branches.Any() || node.Type == "End")
         {
-            subtreeWidths[nodeId] = 350; // Width for a single node
-            return 350;
+            subtreeWidths[nodeId] = 400; // Width for a single node with good margin
+            return 400;
         }
         
         // Calculate total width needed for all child branches
@@ -409,14 +411,14 @@
             }
             else
             {
-                totalWidth += 350; // Width for branch without next node
+                totalWidth += 400; // Width for branch without next node
             }
         }
         
-        // Add spacing between branches
-        totalWidth += (branches.Count - 1) * 200; // 200px spacing between branches
+        // Add generous spacing between branches to prevent overlap
+        totalWidth += (branches.Count - 1) * 250; // 250px spacing between branches
         
-        subtreeWidths[nodeId] = Math.Max(totalWidth, 350);
+        subtreeWidths[nodeId] = Math.Max(totalWidth, 400);
         return subtreeWidths[nodeId];
     }
     
@@ -442,13 +444,13 @@
         
         var branches = GetNodeBranches(node);
         if (!branches.Any() || node.Type == "End")
-            return y + 200;
+            return y + 220;
         
-        int nextY = y + 280; // Increased vertical space for arrows to be visible
-        int choiceY = y + 140; // Space for choice boxes
+        int nextY = y + 320; // Increased vertical space for clear arrow visibility
+        int choiceY = y + 160; // Space for choice boxes
         
         // Calculate positions for branches based on subtree widths
-        int nodeWidth = subtreeWidths.ContainsKey(nodeId) ? subtreeWidths[nodeId] : 350;
+        int nodeWidth = subtreeWidths.ContainsKey(nodeId) ? subtreeWidths[nodeId] : 400;
         int startX = x - (nodeWidth / 2);
         int currentX = startX;
         
@@ -459,7 +461,7 @@
             var branch = branches[i];
             
             // Get width for this branch's subtree
-            int branchWidth = 350;
+            int branchWidth = 400;
             if (!string.IsNullOrEmpty(branch.NextNodeId) && subtreeWidths.ContainsKey(branch.NextNodeId))
             {
                 branchWidth = subtreeWidths[branch.NextNodeId];
@@ -496,11 +498,11 @@
                 }
             }
             
-            // Move to next branch position
-            currentX += branchWidth + 200; // Add spacing between branches
+            // Move to next branch position with generous spacing
+            currentX += branchWidth + 250; // Add spacing between branches
         }
         
-        return maxBottomY + 80; // Add extra spacing at bottom
+        return maxBottomY + 100; // Add extra spacing at bottom
     }
     
     private RenderFragment RenderFlowchart() => builder =>
