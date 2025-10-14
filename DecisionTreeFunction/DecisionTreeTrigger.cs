@@ -188,13 +188,13 @@ namespace DecisionTreeFunction
             if (node.Type == "SingleChoice" && node.Choices != null)
             {
                 sb.AppendLine();
-                sb.AppendLine("Please respond with one of the following options:");
+                sb.AppendLine("Please respond with one of the following options that best answers the question based on the transcript:");
                 foreach (var choice in node.Choices)
                 {
                     sb.AppendLine($"- {choice.Label}");
                 }
                 sb.AppendLine();
-                sb.AppendLine("Respond with just the option name (e.g., 'Billing' or 'Technical').");
+                sb.AppendLine("Respond with just the option name.");
             }
             else if (node.Type == "Number")
             {
@@ -213,7 +213,7 @@ namespace DecisionTreeFunction
             var chatOptions = new ChatCompletionsOptions
             {
                 DeploymentName = deployment,
-                Temperature = 0.2f,
+                Temperature = 0.1f,
                 MaxTokens = 500
             };
 
