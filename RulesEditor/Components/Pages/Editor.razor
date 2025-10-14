@@ -1,0 +1,365 @@
+@page "/editor"
+@rendermode InteractiveServer
+@using DecisionTreeShared.Models
+@using RulesEditor.Services
+@inject DecisionTreeService TreeService
+
+<PageTitle>Rules.json Editor</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1>Decision Tree Rules Editor</h1>
+            <p class="lead">Create and edit rules.json files for the DecisionTreeFunction</p>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">JSON Editor</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Decision Tree JSON:</label>
+                        <textarea class="form-control font-monospace" 
+                                  rows="25" 
+                                  @bind="jsonContent" 
+                                  @bind:event="oninput"
+                                  style="font-size: 12px;"></textarea>
+                    </div>
+                    
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-success" @onclick="ValidateJson">
+                            <i class="bi bi-check-circle"></i> Validate
+                        </button>
+                        <button class="btn btn-primary" @onclick="SaveToFile">
+                            <i class="bi bi-save"></i> Save to File
+                        </button>
+                        <label class="btn btn-info">
+                            <i class="bi bi-upload"></i> Load File
+                            <InputFile OnChange="LoadFile" class="d-none" accept=".json" />
+                        </label>
+                        <button class="btn btn-secondary" @onclick="DownloadJson">
+                            <i class="bi bi-download"></i> Download
+                        </button>
+                        <button class="btn btn-warning" @onclick="CreateNew">
+                            <i class="bi bi-file-earmark-plus"></i> New
+                        </button>
+                        <button class="btn btn-outline-secondary" @onclick="LoadExample">
+                            <i class="bi bi-file-text"></i> Load Example
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Validation & Preview</h5>
+                </div>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    @if (!string.IsNullOrEmpty(validationMessage))
+                    {
+                        <div class="alert @(isValid ? "alert-success" : "alert-danger")" role="alert">
+                            <h6 class="alert-heading">@(isValid ? "✓ Validation Passed" : "✗ Validation Failed")</h6>
+                            <pre class="mb-0" style="white-space: pre-wrap;">@validationMessage</pre>
+                        </div>
+                    }
+
+                    @if (currentTree != null && isValid)
+                    {
+                        <div class="mt-3">
+                            <h6>Decision Tree Structure:</h6>
+                            <ul class="list-group">
+                                <li class="list-group-item">
+                                    <strong>ID:</strong> @currentTree.Id
+                                </li>
+                                <li class="list-group-item">
+                                    <strong>Version:</strong> @currentTree.Version
+                                </li>
+                                <li class="list-group-item">
+                                    <strong>Start Node:</strong> @currentTree.StartNodeId
+                                </li>
+                                <li class="list-group-item">
+                                    <strong>Total Nodes:</strong> @currentTree.Nodes.Count
+                                </li>
+                            </ul>
+
+                            <h6 class="mt-3">Nodes:</h6>
+                            <div class="accordion" id="nodeAccordion">
+                                @foreach (var node in currentTree.Nodes.OrderBy(n => n.Key))
+                                {
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header" id="heading-@node.Key">
+                                            <button class="accordion-button collapsed" type="button" 
+                                                    data-bs-toggle="collapse" 
+                                                    data-bs-target="#collapse-@node.Key" 
+                                                    aria-expanded="false" 
+                                                    aria-controls="collapse-@node.Key">
+                                                <span class="badge bg-@GetNodeTypeBadge(node.Value.Type) me-2">@node.Value.Type</span>
+                                                <strong>@node.Key</strong>
+                                            </button>
+                                        </h2>
+                                        <div id="collapse-@node.Key" 
+                                             class="accordion-collapse collapse" 
+                                             aria-labelledby="heading-@node.Key" 
+                                             data-bs-parent="#nodeAccordion">
+                                            <div class="accordion-body">
+                                                <p><strong>Prompt:</strong> @node.Value.Prompt</p>
+                                                
+                                                @if (node.Value.Choices != null && node.Value.Choices.Any())
+                                                {
+                                                    <p><strong>Choices:</strong></p>
+                                                    <ul>
+                                                        @foreach (var choice in node.Value.Choices)
+                                                        {
+                                                            <li>@choice.Label (@choice.Key) → @choice.NextNodeId</li>
+                                                        }
+                                                    </ul>
+                                                }
+                                                
+                                                @if (node.Value.Rules != null && node.Value.Rules.Any())
+                                                {
+                                                    <p><strong>Rules:</strong></p>
+                                                    <ul>
+                                                        @foreach (var rule in node.Value.Rules)
+                                                        {
+                                                            <li>@rule.Operator @rule.Value → @rule.NextNodeId</li>
+                                                        }
+                                                    </ul>
+                                                }
+                                                
+                                                @if (!string.IsNullOrEmpty(node.Value.DefaultNextNodeId))
+                                                {
+                                                    <p><strong>Default Next Node:</strong> @node.Value.DefaultNextNodeId</p>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">Documentation</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Node Types:</h6>
+                    <ul>
+                        <li><strong>End:</strong> Terminal node that concludes the flow</li>
+                        <li><strong>SingleChoice:</strong> Presents multiple choice options</li>
+                        <li><strong>Number:</strong> Evaluates numeric responses against rules</li>
+                    </ul>
+                    
+                    <h6 class="mt-3">Validation Rules:</h6>
+                    <ul>
+                        <li>Decision tree must have a valid startNodeId</li>
+                        <li>Start node must exist in the nodes collection</li>
+                        <li>All node references (choices, rules, defaultNextNodeId) must point to existing nodes</li>
+                        <li>No cycles are allowed in the decision tree</li>
+                        <li>All nodes must be reachable from the start node</li>
+                    </ul>
+                    
+                    <h6 class="mt-3">Operators for Number Nodes:</h6>
+                    <p><code>LessThan</code>, <code>LessThanOrEqual</code>, <code>GreaterThan</code>, <code>GreaterOrEqual</code>, <code>Equal</code></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string jsonContent = "";
+    private string validationMessage = "";
+    private bool isValid = false;
+    private DecisionTree? currentTree = null;
+    private string saveFilePath = "rules.json";
+
+    protected override void OnInitialized()
+    {
+        LoadExample();
+    }
+
+    private void ValidateJson()
+    {
+        if (string.IsNullOrWhiteSpace(jsonContent))
+        {
+            validationMessage = "JSON content is empty";
+            isValid = false;
+            return;
+        }
+
+        var result = TreeService.LoadFromJson(jsonContent);
+        isValid = result.Success;
+        currentTree = result.Tree;
+        
+        if (result.Success)
+        {
+            validationMessage = "✓ Validation successful!\n\nThe decision tree is well-formed and all references are valid.";
+        }
+        else
+        {
+            validationMessage = result.ErrorMessage ?? "Unknown validation error";
+        }
+    }
+
+    private async Task LoadFile(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024); // 1MB max
+            using var reader = new StreamReader(stream);
+            jsonContent = await reader.ReadToEndAsync();
+            
+            ValidateJson();
+        }
+        catch (Exception ex)
+        {
+            validationMessage = $"Error loading file: {ex.Message}";
+            isValid = false;
+        }
+    }
+
+    private void SaveToFile()
+    {
+        ValidateJson();
+        
+        if (!isValid || currentTree == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = TreeService.SaveToFile(currentTree, saveFilePath);
+            if (result.Success)
+            {
+                validationMessage = $"✓ File saved successfully to {saveFilePath}";
+            }
+            else
+            {
+                validationMessage = $"Error saving file: {result.ErrorMessage}";
+                isValid = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            validationMessage = $"Error saving file: {ex.Message}";
+            isValid = false;
+        }
+    }
+
+    private void DownloadJson()
+    {
+        // Note: Direct file download in Blazor Server requires JavaScript interop
+        // For simplicity, we show a message that the file has been saved
+        SaveToFile();
+    }
+
+    private void CreateNew()
+    {
+        var newTree = TreeService.CreateNewTree();
+        jsonContent = TreeService.SerializeToJson(newTree);
+        ValidateJson();
+    }
+
+    private void LoadExample()
+    {
+        jsonContent = @"{
+  ""id"": ""example-tree"",
+  ""version"": ""1.0.0"",
+  ""startNodeId"": ""q1"",
+  ""nodes"": {
+    ""q1"": {
+      ""id"": ""q1"",
+      ""prompt"": ""What type of issue is this?"",
+      ""type"": ""SingleChoice"",
+      ""choices"": [
+        {
+          ""key"": ""billing"",
+          ""label"": ""Billing Issue"",
+          ""nextNodeId"": ""q_billing""
+        },
+        {
+          ""key"": ""technical"",
+          ""label"": ""Technical Issue"",
+          ""nextNodeId"": ""q_tech""
+        }
+      ]
+    },
+    ""q_billing"": {
+      ""id"": ""q_billing"",
+      ""prompt"": ""How much is the disputed amount?"",
+      ""type"": ""Number"",
+      ""rules"": [
+        {
+          ""operator"": ""LessThan"",
+          ""value"": ""100"",
+          ""nextNodeId"": ""end_refund""
+        },
+        {
+          ""operator"": ""GreaterOrEqual"",
+          ""value"": ""100"",
+          ""nextNodeId"": ""end_escalate""
+        }
+      ]
+    },
+    ""q_tech"": {
+      ""id"": ""q_tech"",
+      ""prompt"": ""Have you tried restarting the device?"",
+      ""type"": ""SingleChoice"",
+      ""choices"": [
+        {
+          ""key"": ""yes"",
+          ""label"": ""Yes"",
+          ""nextNodeId"": ""end_escalate""
+        },
+        {
+          ""key"": ""no"",
+          ""label"": ""No"",
+          ""nextNodeId"": ""end_restart""
+        }
+      ]
+    },
+    ""end_refund"": {
+      ""id"": ""end_refund"",
+      ""type"": ""End"",
+      ""prompt"": ""Refund approved. Amount will be credited in 3-5 business days.""
+    },
+    ""end_escalate"": {
+      ""id"": ""end_escalate"",
+      ""type"": ""End"",
+      ""prompt"": ""Escalating to specialist for further assistance.""
+    },
+    ""end_restart"": {
+      ""id"": ""end_restart"",
+      ""type"": ""End"",
+      ""prompt"": ""Please restart the device and contact us if the issue persists.""
+    }
+  }
+}";
+        ValidateJson();
+    }
+
+    private string GetNodeTypeBadge(string type) => type switch
+    {
+        "End" => "danger",
+        "SingleChoice" => "primary",
+        "Number" => "warning",
+        _ => "secondary"
+    };
+}

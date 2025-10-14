@@ -30,4 +30,17 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Models\**" />
+    <Compile Remove="Engine\**" />
+    <EmbeddedResource Remove="Models\**" />
+    <EmbeddedResource Remove="Engine\**" />
+    <None Remove="Models\**" />
+    <None Remove="Engine\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DecisionTreeShared\DecisionTreeShared.csproj" />
+  </ItemGroup>
+
 </Project>

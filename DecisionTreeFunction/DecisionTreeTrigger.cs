@@ -1,8 +1,8 @@
 using Azure;
 using Azure.AI.OpenAI;
 using Azure.Storage.Blobs;
-using DecisionTreeFunction.Engine;
-using DecisionTreeFunction.Models;
+using DecisionTreeShared.Engine;
+using DecisionTreeShared.Models;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 using System.Text;
