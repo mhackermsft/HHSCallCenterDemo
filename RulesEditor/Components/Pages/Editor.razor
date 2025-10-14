@@ -17,7 +17,8 @@
     
     .flowchart-canvas {
         position: relative;
-        min-height: 800px;
+        min-height: 1200px;
+        min-width: 2000px;
         padding: 40px;
     }
     
@@ -27,8 +28,8 @@
         border: 2px solid #0d6efd;
         border-radius: 12px;
         padding: 15px 20px;
-        min-width: 200px;
-        max-width: 300px;
+        min-width: 220px;
+        max-width: 320px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.15);
         cursor: pointer;
         transition: all 0.2s;
@@ -59,7 +60,8 @@
         font-size: 14px;
         font-weight: 500;
         padding: 12px 16px;
-        min-width: 150px;
+        min-width: 180px;
+        text-align: center;
     }
     
     .node-header {
@@ -355,7 +357,7 @@
         if (string.IsNullOrEmpty(startNodeId)) return;
         
         int currentY = 50;
-        int centerX = 400;
+        int centerX = 600; // Shifted more to the right to accommodate wider trees
         
         CalculateNodePositions(startNodeId, centerX, currentY, new HashSet<string>());
     }
@@ -376,20 +378,20 @@
             NodeId = nodeId,
             X = x,
             Y = y,
-            Width = node.Type == "End" ? 250 : 220,
-            Height = 80
+            Width = node.Type == "End" ? 280 : 260,
+            Height = 90
         };
         
         var branches = GetNodeBranches(node);
         if (!branches.Any() || node.Type == "End")
-            return y + 100;
+            return y + 120;
         
-        int nextY = y + 150; // Space for choice boxes
-        int choiceY = y + 100;
+        int nextY = y + 180; // Increased space for choice boxes
+        int choiceY = y + 110;
         
-        // Calculate total width needed for branches
+        // Calculate total width needed for branches with better spacing
         int totalBranches = branches.Count;
-        int branchSpacing = 280;
+        int branchSpacing = 350; // Increased spacing to prevent overlap
         int totalWidth = (totalBranches - 1) * branchSpacing;
         int startX = x - (totalWidth / 2);
         
@@ -407,8 +409,8 @@
                 NodeId = choiceKey,
                 X = branchX,
                 Y = choiceY,
-                Width = 180,
-                Height = 60,
+                Width = 200,
+                Height = 70,
                 IsChoice = true,
                 ChoiceLabel = branch.Label
             };
@@ -430,7 +432,7 @@
             }
         }
         
-        return maxBottomY;
+        return maxBottomY + 40; // Add extra spacing at bottom
     }
     
     private RenderFragment RenderFlowchart() => builder =>
@@ -521,6 +523,22 @@
     
     private RenderFragment RenderConnectors() => builder =>
     {
+        // Define arrowhead marker first
+        builder.OpenElement(0, "defs");
+        builder.OpenElement(1, "marker");
+        builder.AddAttribute(2, "id", "arrowhead");
+        builder.AddAttribute(3, "markerWidth", "10");
+        builder.AddAttribute(4, "markerHeight", "10");
+        builder.AddAttribute(5, "refX", "9");
+        builder.AddAttribute(6, "refY", "3");
+        builder.AddAttribute(7, "orient", "auto");
+        builder.OpenElement(8, "polygon");
+        builder.AddAttribute(9, "points", "0 0, 10 3, 0 6");
+        builder.AddAttribute(10, "fill", "#495057");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+        
         foreach (var (from, to, label) in connections)
         {
             // Calculate connection points
@@ -529,33 +547,35 @@
             int toCenterX = to.X + (to.Width / 2);
             int toTop = to.Y;
             
-            // Draw line
-            builder.OpenElement(0, "line");
-            builder.AddAttribute(1, "x1", fromCenterX);
-            builder.AddAttribute(2, "y1", fromBottom);
-            builder.AddAttribute(3, "x2", toCenterX);
-            builder.AddAttribute(4, "y2", toTop);
-            builder.AddAttribute(5, "stroke", "#6c757d");
-            builder.AddAttribute(6, "stroke-width", "2");
-            builder.AddAttribute(7, "marker-end", "url(#arrowhead)");
-            builder.CloseElement();
+            // Draw straight or angled line
+            if (Math.Abs(fromCenterX - toCenterX) < 10)
+            {
+                // Straight line
+                builder.OpenElement(11, "line");
+                builder.AddAttribute(12, "x1", fromCenterX);
+                builder.AddAttribute(13, "y1", fromBottom);
+                builder.AddAttribute(14, "x2", toCenterX);
+                builder.AddAttribute(15, "y2", toTop);
+                builder.AddAttribute(16, "stroke", "#495057");
+                builder.AddAttribute(17, "stroke-width", "2");
+                builder.AddAttribute(18, "marker-end", "url(#arrowhead)");
+                builder.CloseElement();
+            }
+            else
+            {
+                // Angled line with path
+                int midY = (fromBottom + toTop) / 2;
+                string path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {midY} L {toCenterX} {midY} L {toCenterX} {toTop}";
+                
+                builder.OpenElement(19, "path");
+                builder.AddAttribute(20, "d", path);
+                builder.AddAttribute(21, "stroke", "#495057");
+                builder.AddAttribute(22, "stroke-width", "2");
+                builder.AddAttribute(23, "fill", "none");
+                builder.AddAttribute(24, "marker-end", "url(#arrowhead)");
+                builder.CloseElement();
+            }
         }
-        
-        // Define arrowhead marker
-        builder.OpenElement(10, "defs");
-        builder.OpenElement(11, "marker");
-        builder.AddAttribute(12, "id", "arrowhead");
-        builder.AddAttribute(13, "markerWidth", "10");
-        builder.AddAttribute(14, "markerHeight", "10");
-        builder.AddAttribute(15, "refX", "5");
-        builder.AddAttribute(16, "refY", "3");
-        builder.AddAttribute(17, "orient", "auto");
-        builder.OpenElement(18, "polygon");
-        builder.AddAttribute(19, "points", "0 0, 10 3, 0 6");
-        builder.AddAttribute(20, "fill", "#6c757d");
-        builder.CloseElement();
-        builder.CloseElement();
-        builder.CloseElement();
     };
 
     private List<(string Label, string NextNodeId)> GetNodeBranches(DecisionNode node)
