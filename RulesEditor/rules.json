@@ -115,8 +115,8 @@
           "nextNodeId": "end_supervisor_80"
         },
         {
-          "operator": "LessThanOrEqual",
-          "value": "29",
+          "operator": "LessThan",
+          "value": "30",
           "nextNodeId": "end_cancelled"
         }
       ],
@@ -140,7 +140,7 @@
     },
     "end_supervisor_80": {
       "id": "end_supervisor_80",
-      "prompt": "Approved by supervisor: lifetime discount. Your monthly price will be $30.00.",
+      "prompt": "Approved by supervisor: lifetime discount. Your monthly price will be $30.",
       "type": "End",
       "choices": null,
       "rules": null,

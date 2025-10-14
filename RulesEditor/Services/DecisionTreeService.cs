@@ -1,6 +1,7 @@
 using DecisionTreeShared.Models;
 using DecisionTreeShared.Engine;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 
 namespace RulesEditor.Services
 {
@@ -9,11 +10,18 @@ namespace RulesEditor.Services
     /// </summary>
     public class DecisionTreeService
     {
+        private readonly IWebHostEnvironment _env;
         private DecisionTree? _currentTree;
 
-        public DecisionTreeService()
+        public DecisionTreeService(IWebHostEnvironment env)
         {
+            _env = env;
         }
+
+        /// <summary>
+        /// Returns the default rules.json path at the project content root
+        /// </summary>
+        public string GetDefaultRulesPath() => Path.Combine(_env.ContentRootPath, "rules.json");
 
         /// <summary>
         /// Load decision tree from JSON string
@@ -90,6 +98,15 @@ namespace RulesEditor.Services
         }
 
         /// <summary>
+        /// Attempts to load the default rules.json if it exists
+        /// </summary>
+        public (bool Success, string? ErrorMessage, DecisionTree? Tree) LoadDefaultFile()
+        {
+            var path = GetDefaultRulesPath();
+            return LoadFromFile(path);
+        }
+
+        /// <summary>
         /// Save decision tree to JSON string
         /// </summary>
         public string SerializeToJson(DecisionTree tree)
@@ -117,6 +134,15 @@ namespace RulesEditor.Services
             {
                 return (false, $"Error saving file: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Save to the default rules.json in project root
+        /// </summary>
+        public (bool Success, string? ErrorMessage) SaveDefaultFile(DecisionTree tree)
+        {
+            var path = GetDefaultRulesPath();
+            return SaveToFile(tree, path);
         }
 
         /// <summary>

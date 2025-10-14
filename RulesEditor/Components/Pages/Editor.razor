@@ -3,52 +3,16 @@
 @using DecisionTreeShared.Models
 @using RulesEditor.Services
 @inject DecisionTreeService TreeService
+@inject IJSRuntime JS
 
 <PageTitle>Decision Tree Flow Builder</PageTitle>
 
 <style>
     /* Full page flex layout confined to normal document flow so app layout nav remains visible */
-    .flow-page {
-        height: 100%;            /* fill available layout space instead of forcing full viewport */
-        display: flex;
-        flex-direction: column;
-        padding: 0;
-        overflow: hidden;        /* prevent outer (body) scrollbar; inner container will scroll */
-        background: #fff;
-        position: relative;      /* no fixed/inset so side/top nav from layout show */
-        min-height: 0;           /* allow nested flex to shrink */
-    }
-
-    .flow-container {
-        flex: 1 1 auto;
-        padding: 20px;
-        background: #f8f9fa;
-        overflow: auto;          /* both scrollbars here */
-        position: relative;
-        min-height: 0;           /* allow flexbox to restrict height */
-    }
-
-    .flowchart-canvas {
-        position: relative;
-        min-height: 2500px;
-        min-width: 5000px;
-        padding: 80px;
-        padding-left: 500px; /* Extra space on left to avoid nav menu overlap */
-    }
-
-    .flowchart-node { /* unchanged below */
-        position: absolute;
-        background: white;
-        border: 2px solid #0d6efd;
-        border-radius: 12px;
-        padding: 15px 20px;
-        min-width: 240px;
-        max-width: 340px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-        cursor: pointer;
-        transition: all 0.2s;
-        z-index: 1;
-    }
+    .flow-page { height: 100%; display: flex; flex-direction: column; padding: 0; overflow: hidden; background: #fff; position: relative; min-height: 0; }
+    .flow-container { flex: 1 1 auto; padding: 20px; background: #f8f9fa; overflow: auto; position: relative; min-height: 0; }
+    .flowchart-canvas { position: relative; min-height: 2500px; min-width: 5000px; padding: 80px; padding-left: 500px; }
+    .flowchart-node { position: absolute; background: white; border: 2px solid #0d6efd; border-radius: 12px; padding: 15px 20px; min-width: 240px; max-width: 340px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); cursor: pointer; transition: all 0.2s; z-index: 1; }
     .flowchart-node:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.25); transform: translateY(-2px); }
     .flowchart-node.start-node { border-color: #28a745; border-width: 3px; background: #f0fff4; }
     .flowchart-node.end-node { border-color: #dc3545; border-width: 2px; background: #fff5f5; border-radius: 20px; }
@@ -69,27 +33,19 @@
         <div class="d-flex justify-content-between align-items-center p-3 bg-white border-bottom" style="gap:1rem;">
             <div>
                 <h3 class="mb-0">Decision Tree Flow Builder</h3>
-                <small class="text-muted">Follow the flow from top to bottom</small>
+                <small class="text-muted">Follow the flow from top to bottom</small><br />
+                <small class="text-muted">File: @TreeService.GetDefaultRulesPath()</small>
             </div>
             <div class="d-flex gap-2">
-                <button class="btn btn-success" @onclick="SaveTree">
-                    <i class="bi bi-save"></i> Save Tree
-                </button>
-                <label class="btn btn-info mb-0">
-                    <i class="bi bi-upload"></i> Load
-                    <InputFile OnChange="LoadFile" class="d-none" accept=".json" />
-                </label>
-                <button class="btn btn-secondary" @onclick="NewTree">
-                    <i class="bi bi-file-earmark-plus"></i> New
-                </button>
+                <button class="btn btn-success" @onclick="SaveTree"><i class="bi bi-save"></i> Save Tree</button>
+                <label class="btn btn-info mb-0"><i class="bi bi-upload"></i> Load <InputFile OnChange="LoadFile" class="d-none" accept=".json" /></label>
+                <button class="btn btn-outline-secondary" @onclick="LoadDefaultFromDisk"><i class="bi bi-folder2-open"></i> Reload rules.json</button>
+                <button class="btn btn-secondary" @onclick="NewTree"><i class="bi bi-file-earmark-plus"></i> New</button>
             </div>
         </div>
-
         @if (!string.IsNullOrEmpty(statusMessage))
         {
-            <div class="alert @(isSuccess ? "alert-success" : "alert-danger") mx-3 my-2" role="alert">
-                @statusMessage
-            </div>
+            <div class="alert @(isSuccess ? "alert-success" : "alert-danger") mx-3 my-2" role="alert">@statusMessage</div>
         }
     </div>
 
@@ -100,17 +56,13 @@
                 <i class="bi bi-diagram-3" style="font-size: 4rem; color: #6c757d;"></i>
                 <h4 class="mt-3">No Decision Tree Yet</h4>
                 <p class="text-muted">Click "New Tree" or add your first node to get started</p>
-                <button class="btn btn-primary btn-lg" @onclick="() => AddNodeAtPosition(null, null)">
-                    <i class="bi bi-plus-circle"></i> Add First Node
-                </button>
+                <button class="btn btn-primary btn-lg" @onclick="() => AddNodeAtPosition(null, null)"><i class="bi bi-plus-circle"></i> Add First Node</button>
             </div>
         }
         else
         {
             <div class="flowchart-canvas">
-                <svg class="flowchart-svg">
-                    @RenderConnectors()
-                </svg>
+                <svg class="flowchart-svg">@RenderConnectors()</svg>
                 @RenderFlowchart()
             </div>
         }
@@ -250,75 +202,108 @@
     private string statusMessage = "";
     private bool isSuccess = false;
     private HashSet<string> renderedNodes = new();
+    private bool pendingScrollToStart = false; // flag to trigger scrolling after render
+    private IJSObjectReference? module;
 
     protected override void OnInitialized()
     {
-        LoadExampleTree();
+        EnsureTreeLoaded();
     }
-    
-    protected override void OnAfterRender(bool firstRender)
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender || !layoutCalculated)
+        if (firstRender)
         {
-            CalculateFlowchartLayout();
-            StateHasChanged();
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/editorScroll.js");
+        }
+
+        if (pendingScrollToStart && !string.IsNullOrEmpty(startNodeId) && module != null)
+        {
+            pendingScrollToStart = false;
+            try
+            {
+                await module.InvokeVoidAsync("scrollToNode", startNodeId);
+            }
+            catch { /* swallow */ }
         }
     }
 
-    private class NodePosition
+    private void EnsureTreeLoaded()
     {
-        public string NodeId { get; set; } = string.Empty;
-        public int X { get; set; }
-        public int Y { get; set; }
-        public int Width { get; set; } = 220;
-        public int Height { get; set; } = 80;
-        public bool IsChoice { get; set; }
-        public string? ChoiceLabel { get; set; }
+        var result = TreeService.LoadDefaultFile();
+        if (result.Success && result.Tree != null)
+        {
+            treeId = result.Tree.Id;
+            treeVersion = result.Tree.Version;
+            startNodeId = result.Tree.StartNodeId;
+            nodes = result.Tree.Nodes.Values.ToList();
+            statusMessage = "Loaded rules.json";
+            isSuccess = true;
+        }
+        else
+        {
+            // Seed from bundled example only if no file yet
+            LoadExampleTree();
+            statusMessage = "No existing rules.json found. Loaded example tree.";
+            isSuccess = true;
+        }
+        layoutCalculated = false;
+        CalculateFlowchartLayout();
+        if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true; // request scroll
     }
-    
+
+    private async Task LoadDefaultFromDisk()
+    {
+        await Task.Yield();
+        EnsureTreeLoaded();
+        StateHasChanged();
+    }
+
+    private class NodePosition { public string NodeId { get; set; } = string.Empty; public int X { get; set; } public int Y { get; set; } public int Width { get; set; } = 220; public int Height { get; set; } = 80; public bool IsChoice { get; set; } public string? ChoiceLabel { get; set; }
+    }
     private Dictionary<string, NodePosition> nodePositions = new();
     private List<(NodePosition from, NodePosition to, string? label)> connections = new();
     private bool layoutCalculated = false;
-    
+
     private void CalculateFlowchartLayout()
     {
         nodePositions.Clear();
         connections.Clear();
-        
+
         if (string.IsNullOrEmpty(startNodeId)) return;
-        
+
         int currentY = 100;
-        
+
         // First pass: calculate tree width needed
         var subtreeWidths = new Dictionary<string, int>();
         int totalTreeWidth = CalculateSubtreeWidths(startNodeId, new HashSet<string>(), subtreeWidths);
-        
+
         // Position start node centered based on total tree width
         int centerX = Math.Max(1200, (totalTreeWidth / 2) + 500); // Ensure enough left margin
-        
+
         // Second pass: position nodes with proper spacing
         CalculateNodePositions(startNodeId, centerX, currentY, new HashSet<string>(), subtreeWidths);
-        
+
         layoutCalculated = true;
     }
-    
+
     private int CalculateSubtreeWidths(string nodeId, HashSet<string> visited, Dictionary<string, int> subtreeWidths)
     {
         if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId))
             return 0;
-            
+
         visited.Add(nodeId);
-        
+
         var node = nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null) return 400; // Default width for missing nodes
-        
+
         var branches = GetNodeBranches(node);
         if (!branches.Any() || node.Type == "End")
         {
             subtreeWidths[nodeId] = 400; // Width for a single node with good margin
             return 400;
         }
-        
+
         // Calculate total width needed for all child branches
         int totalWidth = 0;
         foreach (var branch in branches)
@@ -333,24 +318,24 @@
                 totalWidth += 400; // Width for branch without next node
             }
         }
-        
+
         // Add generous spacing between branches to prevent overlap
         totalWidth += (branches.Count - 1) * 250; // 250px spacing between branches
-        
+
         subtreeWidths[nodeId] = Math.Max(totalWidth, 400);
         return subtreeWidths[nodeId];
     }
-    
+
     private int CalculateNodePositions(string nodeId, int x, int y, HashSet<string> visited, Dictionary<string, int> subtreeWidths)
     {
         if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId))
             return y;
-            
+
         visited.Add(nodeId);
-        
+
         var node = nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null) return y;
-        
+
         // Position the current node
         nodePositions[nodeId] = new NodePosition
         {
@@ -360,34 +345,34 @@
             Width = node.Type == "End" ? 300 : 280,
             Height = 95
         };
-        
+
         var branches = GetNodeBranches(node);
         if (!branches.Any() || node.Type == "End")
             return y + 220;
-        
+
         int nextY = y + 320; // Increased vertical space for clear arrow visibility
         int choiceY = y + 160; // Space for choice boxes
-        
+
         // Calculate positions for branches based on subtree widths
         int nodeWidth = subtreeWidths.ContainsKey(nodeId) ? subtreeWidths[nodeId] : 400;
         int startX = x - (nodeWidth / 2);
         int currentX = startX;
-        
+
         int maxBottomY = nextY;
-        
+
         for (int i = 0; i < branches.Count; i++)
         {
             var branch = branches[i];
-            
+
             // Get width for this branch's subtree
             int branchWidth = 400;
             if (!string.IsNullOrEmpty(branch.NextNodeId) && subtreeWidths.ContainsKey(branch.NextNodeId))
             {
                 branchWidth = subtreeWidths[branch.NextNodeId];
             }
-            
+
             int branchCenterX = currentX + (branchWidth / 2);
-            
+
             // Position choice box
             string choiceKey = $"{nodeId}_choice_{i}";
             nodePositions[choiceKey] = new NodePosition
@@ -400,20 +385,20 @@
                 IsChoice = true,
                 ChoiceLabel = branch.Label
             };
-            
+
             // Add connection from node to choice
             connections.Add((nodePositions[nodeId], nodePositions[choiceKey], null));
-            
+
             // Position next node if it exists and hasn't been visited yet
             if (!string.IsNullOrEmpty(branch.NextNodeId))
             {
                 bool willPositionNextNode = !visited.Contains(branch.NextNodeId);
-                
+
                 if (willPositionNextNode)
                 {
                     int childBottomY = CalculateNodePositions(branch.NextNodeId, branchCenterX, nextY, visited, subtreeWidths);
                     maxBottomY = Math.Max(maxBottomY, childBottomY);
-                    
+
                     if (nodePositions.ContainsKey(branch.NextNodeId))
                     {
                         connections.Add((nodePositions[choiceKey], nodePositions[branch.NextNodeId], null));
@@ -427,21 +412,21 @@
                     }
                 }
             }
-            
+
             // Move to next branch position with generous spacing
             currentX += branchWidth + 250; // Add spacing between branches
         }
-        
+
         return maxBottomY + 100; // Add extra spacing at bottom
     }
-    
+
     private RenderFragment RenderFlowchart() => builder =>
     {
         if (!layoutCalculated)
         {
             CalculateFlowchartLayout();
         }
-        
+
         foreach (var pos in nodePositions.Values)
         {
             if (pos.IsChoice)
@@ -458,72 +443,78 @@
             }
         }
     };
-    
+
     private RenderFragment RenderFlowchartNode(NodePosition pos) => builder =>
     {
         var node = nodes.FirstOrDefault(n => n.Id == pos.NodeId);
         if (node == null) return;
-        
+
         builder.OpenElement(0, "div");
         builder.AddAttribute(1, "class", $"flowchart-node {(node.Id == startNodeId ? "start-node" : "")} {(node.Type == "End" ? "end-node" : "")}");
         builder.AddAttribute(2, "style", $"left: {pos.X}px; top: {pos.Y}px; width: {pos.Width}px;");
         builder.AddAttribute(3, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
-        
+        builder.AddAttribute(4, "data-node-id", node.Id); // attribute for JS lookup
+
         // Node header
-        builder.OpenElement(4, "div");
-        builder.AddAttribute(5, "class", "node-header");
-        
-        builder.OpenElement(6, "div");
-        builder.AddAttribute(7, "class", "node-info");
-        builder.OpenElement(8, "span");
-        builder.AddAttribute(9, "class", $"badge bg-{GetNodeTypeBadge(node.Type)}");
-        builder.AddAttribute(10, "style", "font-size: 10px;");
-        builder.AddContent(11, node.Type);
+        builder.OpenElement(5, "div");
+        builder.AddAttribute(6, "class", "node-header");
+
+        builder.OpenElement(7, "div");
+        builder.AddAttribute(8, "class", "node-info");
+        builder.OpenElement(9, "span");
+        builder.AddAttribute(10, "class", $"badge bg-{GetNodeTypeBadge(node.Type)}");
+        builder.AddAttribute(11, "style", "font-size: 10px;");
+        builder.AddContent(12, node.Type);
         builder.CloseElement();
         if (node.Id == startNodeId)
         {
-            builder.OpenElement(12, "span");
-            builder.AddAttribute(13, "class", "badge bg-success");
-            builder.AddAttribute(14, "style", "font-size: 10px;");
-            builder.AddContent(15, "START");
+            builder.OpenElement(13, "span");
+            builder.AddAttribute(14, "class", "badge bg-success");
+            builder.AddAttribute(15, "style", "font-size: 10px;");
+            builder.AddContent(16, "START");
             builder.CloseElement();
         }
         builder.CloseElement();
-        
+
         // Actions
-        builder.OpenElement(16, "div");
-        builder.AddAttribute(17, "class", "node-actions");
-        builder.OpenElement(18, "button");
-        builder.AddAttribute(19, "class", "btn btn-sm btn-primary");
-        builder.AddAttribute(20, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
-        builder.AddAttribute(21, "style", "padding: 2px 6px; font-size: 12px;");
-        builder.OpenElement(22, "i");
-        builder.AddAttribute(23, "class", "bi bi-pencil");
+        builder.OpenElement(17, "div");
+        builder.AddAttribute(18, "class", "node-actions");
+        builder.OpenElement(19, "button");
+        builder.AddAttribute(20, "class", "btn btn-sm btn-primary");
+        builder.AddAttribute(21, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
+        builder.AddAttribute(22, "style", "padding: 2px 6px; font-size: 12px;");
+        builder.OpenElement(23, "i");
+        builder.AddAttribute(24, "class", "bi bi-pencil");
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(24, "button");
-        builder.AddAttribute(25, "class", "btn btn-sm btn-danger");
-        builder.AddAttribute(26, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
-        builder.AddAttribute(27, "style", "padding: 2px 6px; font-size: 12px;");
-        builder.OpenElement(28, "i");
-        builder.AddAttribute(29, "class", "bi bi-trash");
+        builder.OpenElement(25, "button");
+        builder.AddAttribute(26, "class", "btn btn-sm btn-danger");
+        builder.AddAttribute(27, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
+        builder.AddAttribute(28, "style", "padding: 2px 6px; font-size: 12px;");
+        builder.OpenElement(29, "i");
+        builder.AddAttribute(30, "class", "bi bi-trash");
         builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
-        
+
         builder.CloseElement(); // node-header
-        
+
         // Node prompt
-        builder.OpenElement(30, "div");
-        builder.AddAttribute(31, "class", "node-prompt");
-        builder.AddContent(32, node.Prompt);
+        builder.OpenElement(31, "div");
+        builder.AddAttribute(32, "class", "node-prompt");
+        builder.AddContent(33, node.Prompt);
         builder.CloseElement();
-        
+
         builder.CloseElement(); // flowchart-node
     };
-    
+
     private RenderFragment RenderConnectors() => builder =>
     {
+        if (!layoutCalculated)
+        {
+            CalculateFlowchartLayout();
+        }
+
         // Define arrowhead marker first
         builder.OpenElement(0, "defs");
         builder.OpenElement(1, "marker");
@@ -539,7 +530,7 @@
         builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
-        
+
         foreach (var (from, to, label) in connections)
         {
             // Calculate connection points
@@ -547,7 +538,7 @@
             int fromBottom = from.Y + from.Height;
             int toCenterX = to.X + (to.Width / 2);
             int toTop = to.Y;
-            
+
             // Draw straight or angled line
             if (Math.Abs(fromCenterX - toCenterX) < 10)
             {
@@ -567,7 +558,7 @@
                 // Angled line with path
                 int midY = (fromBottom + toTop) / 2;
                 string path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {midY} L {toCenterX} {midY} L {toCenterX} {toTop}";
-                
+
                 builder.OpenElement(19, "path");
                 builder.AddAttribute(20, "d", path);
                 builder.AddAttribute(21, "stroke", "#495057");
@@ -582,7 +573,7 @@
     private List<(string Label, string NextNodeId)> GetNodeBranches(DecisionNode node)
     {
         var branches = new List<(string Label, string NextNodeId)>();
-        
+
         if (node.Type == "SingleChoice" && node.Choices != null)
         {
             foreach (var choice in node.Choices)
@@ -597,16 +588,16 @@
                 branches.Add(($"{rule.Operator} {rule.Value}", rule.NextNodeId ?? ""));
             }
         }
-        
+
         return branches;
     }
 
     private void LoadExampleTree()
     {
+        // Example now matches default repo rules.json so round-trip save/load is stable
         treeId = "essence-triage-demo";
         treeVersion = "1.0.0";
         startNodeId = "q_greeting";
-        
         nodes = new List<DecisionNode>
         {
             new DecisionNode
@@ -651,7 +642,7 @@
                 Choices = new List<Choice>
                 {
                     new Choice { Key = "accept", Label = "Yes, extend my free trial", NextNodeId = "end_extended" },
-                    new Choice { Key = "decline", Label = "No, I'd still like to cancel", NextNodeId = "q_discount40" }
+                    new Choice { Key = "decline", Label = "No, I'd still like to cancel", NextNodeId = "end_cancelled" }
                 }
             },
             new DecisionNode
@@ -672,50 +663,20 @@
                 Prompt = "What monthly price (USD) would make it affordable for you?",
                 Rules = new List<Rule>
                 {
-                    new Rule { Operator = "LessThanOrEqual", Value = "20", NextNodeId = "end_supervisor_80" },
-                    new Rule { Operator = "GreaterThan", Value = "20", NextNodeId = "end_cancelled" }
+                    new Rule { Operator = "GreaterOrEqual", Value = "30", NextNodeId = "end_supervisor_80" },
+                    new Rule { Operator = "LessThan", Value = "30", NextNodeId = "end_cancelled" }
                 }
             },
-            new DecisionNode
-            {
-                Id = "end_extended",
-                Type = "End",
-                Prompt = "Your free trial has been extended by 15 days. Please evaluate and contact us before it ends if you still wish to cancel."
-            },
-            new DecisionNode
-            {
-                Id = "end_keep40",
-                Type = "End",
-                Prompt = "Great! Your subscription will continue at the 40% discounted rate of $50.28/month."
-            },
-            new DecisionNode
-            {
-                Id = "end_supervisor_80",
-                Type = "End",
-                Prompt = "Approved by supervisor: lifetime 80% discount. Your monthly price will be $16.76."
-            },
-            new DecisionNode
-            {
-                Id = "end_cancelled",
-                Type = "End",
-                Prompt = "Understood. Your subscription is canceled. Thank you for trying Essence of Oregon."
-            },
-            new DecisionNode
-            {
-                Id = "end_escalate",
-                Type = "End",
-                Prompt = "Thanks for the feedback. A specialist will review and follow up regarding your cancellation request."
-            },
-            new DecisionNode
-            {
-                Id = "end_other",
-                Type = "End",
-                Prompt = "Thanks for reaching out. Please contact support for assistance with non-cancellation inquiries."
-            }
+            new DecisionNode { Id = "end_extended", Type = "End", Prompt = "Your free trial has been extended by 15 days. Please evaluate and contact us before it ends if you still wish to cancel." },
+            new DecisionNode { Id = "end_keep40", Type = "End", Prompt = "Great! Your subscription will continue at the 40% discounted rate of $50.28/month." },
+            new DecisionNode { Id = "end_supervisor_80", Type = "End", Prompt = "Approved by supervisor: lifetime discount. Your monthly price will be $30." },
+            new DecisionNode { Id = "end_cancelled", Type = "End", Prompt = "Understood. Your subscription is canceled. Thank you for trying Essence of Oregon." },
+            new DecisionNode { Id = "end_escalate", Type = "End", Prompt = "Thanks for the feedback. A specialist will review and follow up regarding your cancellation request." },
+            new DecisionNode { Id = "end_other", Type = "End", Prompt = "Thanks for reaching out. Please contact support for assistance with non-cancellation inquiries." }
         };
-        
         renderedNodes.Clear();
         layoutCalculated = false;
+        if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true; // ensure scroll after example load
     }
 
     private void AddNodeAtPosition(string? parentNodeId, string? branchLabel)
@@ -759,6 +720,8 @@
         editingNode = newNode;
         renderedNodes.Clear();
         layoutCalculated = false;
+        CalculateFlowchartLayout();
+        if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
     }
 
     private void EditNode(DecisionNode node)
@@ -810,6 +773,9 @@
         }
         
         renderedNodes.Clear();
+        layoutCalculated = false;
+        CalculateFlowchartLayout();
+        if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
     }
 
     private void AddChoice()
@@ -831,6 +797,8 @@
         if (editingNode?.Choices != null && index < editingNode.Choices.Count)
         {
             editingNode.Choices.RemoveAt(index);
+            layoutCalculated = false;
+            CalculateFlowchartLayout();
         }
     }
 
@@ -853,6 +821,8 @@
         if (editingNode?.Rules != null && index < editingNode.Rules.Count)
         {
             editingNode.Rules.RemoveAt(index);
+            layoutCalculated = false;
+            CalculateFlowchartLayout();
         }
     }
 
@@ -865,6 +835,8 @@
         editingNode = null;
         statusMessage = "";
         renderedNodes.Clear();
+        layoutCalculated = false;
+        CalculateFlowchartLayout();
     }
 
     private async Task LoadFile(InputFileChangeEventArgs e)
@@ -889,6 +861,9 @@
                 statusMessage = "Tree loaded successfully!";
                 isSuccess = true;
                 renderedNodes.Clear();
+                layoutCalculated = false;
+                CalculateFlowchartLayout();
+                if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
             }
             else
             {
@@ -920,10 +895,10 @@
             
             if (result.Success)
             {
-                var saveResult = TreeService.SaveToFile(tree, "rules.json");
+                var saveResult = TreeService.SaveDefaultFile(tree);
                 if (saveResult.Success)
                 {
-                    statusMessage = "✓ Tree saved successfully to rules.json!";
+                    statusMessage = $"✓ Tree saved to {TreeService.GetDefaultRulesPath()}";
                     isSuccess = true;
                 }
                 else
