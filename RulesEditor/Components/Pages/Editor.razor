@@ -485,16 +485,31 @@
             // Add connection from node to choice
             connections.Add((nodePositions[nodeId], nodePositions[choiceKey], null));
             
-            // Position next node if it exists
+            // Position next node if it exists and hasn't been visited yet
             if (!string.IsNullOrEmpty(branch.NextNodeId))
             {
-                int childBottomY = CalculateNodePositions(branch.NextNodeId, branchCenterX, nextY, visited, subtreeWidths);
-                maxBottomY = Math.Max(maxBottomY, childBottomY);
+                // Only add connection from choice to next node if next node will be positioned
+                // (i.e., hasn't been visited yet)
+                bool willPositionNextNode = !visited.Contains(branch.NextNodeId);
                 
-                // Add connection from choice to next node
-                if (nodePositions.ContainsKey(branch.NextNodeId))
+                if (willPositionNextNode)
                 {
-                    connections.Add((nodePositions[choiceKey], nodePositions[branch.NextNodeId], null));
+                    int childBottomY = CalculateNodePositions(branch.NextNodeId, branchCenterX, nextY, visited, subtreeWidths);
+                    maxBottomY = Math.Max(maxBottomY, childBottomY);
+                    
+                    // Add connection from choice to next node only if it was just positioned
+                    if (nodePositions.ContainsKey(branch.NextNodeId))
+                    {
+                        connections.Add((nodePositions[choiceKey], nodePositions[branch.NextNodeId], null));
+                    }
+                }
+                else
+                {
+                    // Node already exists elsewhere in tree - add connection to existing position
+                    if (nodePositions.ContainsKey(branch.NextNodeId))
+                    {
+                        connections.Add((nodePositions[choiceKey], nodePositions[branch.NextNodeId], null));
+                    }
                 }
             }
             
