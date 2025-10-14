@@ -8,117 +8,115 @@
 
 <style>
     .flow-container {
-        padding: 40px 20px;
+        padding: 20px;
         background: #f8f9fa;
         min-height: calc(100vh - 100px);
-        overflow-x: auto;
-    }
-    
-    .tree-container {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 30px;
-    }
-    
-    .tree-row {
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        gap: 30px;
-        flex-wrap: wrap;
+        overflow: auto;
         position: relative;
     }
     
-    .tree-node-wrapper {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
+    .flowchart-canvas {
         position: relative;
+        min-height: 800px;
+        padding: 40px;
     }
     
-    .tree-node-box {
+    .flowchart-node {
+        position: absolute;
         background: white;
         border: 2px solid #0d6efd;
-        border-radius: 10px;
-        padding: 20px;
-        min-width: 250px;
-        max-width: 400px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        text-align: center;
-        position: relative;
+        border-radius: 12px;
+        padding: 15px 20px;
+        min-width: 200px;
+        max-width: 300px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        cursor: pointer;
+        transition: all 0.2s;
     }
     
-    .tree-node-box.start-node {
+    .flowchart-node:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+        transform: translateY(-2px);
+    }
+    
+    .flowchart-node.start-node {
         border-color: #28a745;
         border-width: 3px;
+        background: #f0fff4;
     }
     
-    .tree-node-box.end-node {
+    .flowchart-node.end-node {
         border-color: #dc3545;
+        border-width: 2px;
         background: #fff5f5;
+        border-radius: 20px;
     }
     
-    .tree-node-box.answer-box {
+    .flowchart-node.choice-node {
         background: #e7f3ff;
         border-color: #0d6efd;
-        min-width: 200px;
+        border-radius: 8px;
+        font-size: 14px;
         font-weight: 500;
+        padding: 12px 16px;
+        min-width: 150px;
     }
     
     .node-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
+    }
+    
+    .node-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
     }
     
     .node-actions {
         display: flex;
-        gap: 5px;
+        gap: 4px;
     }
     
     .node-prompt {
-        font-size: 15px;
-        margin: 8px 0;
+        font-size: 14px;
+        line-height: 1.4;
         color: #212529;
+        margin: 0;
     }
     
-    .connector-down {
-        width: 2px;
-        height: 30px;
-        background: #6c757d;
-        margin: 0 auto;
-    }
-    
-    .connector-up {
-        width: 2px;
-        height: 30px;
-        background: #6c757d;
+    .flowchart-svg {
         position: absolute;
-        top: -30px;
-        left: 50%;
-        transform: translateX(-1px);
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 0;
     }
     
-    .add-node-box {
+    .flowchart-node {
+        z-index: 1;
+    }
+    
+    .add-node-button {
+        position: absolute;
         border: 2px dashed #6c757d;
         background: #f8f9fa;
-        padding: 20px 30px;
+        padding: 10px 20px;
         border-radius: 8px;
         text-align: center;
-        min-width: 200px;
+        cursor: pointer;
+        transition: all 0.2s;
+        z-index: 1;
     }
     
-    .flow-reference {
-        background: #fff3cd;
-        border: 2px dashed #856404;
-        padding: 15px;
-        border-radius: 8px;
-        text-align: center;
-        font-style: italic;
-        min-width: 200px;
-        font-size: 14px;
+    .add-node-button:hover {
+        background: #e9ecef;
+        border-color: #0d6efd;
     }
     
     .edit-modal {
@@ -186,8 +184,11 @@
         }
         else
         {
-            <div class="tree-container">
-                @RenderTreeByLevels()
+            <div class="flowchart-canvas">
+                <svg class="flowchart-svg">
+                    @RenderConnectors()
+                </svg>
+                @RenderFlowchart()
             </div>
         }
     </div>
@@ -332,158 +333,155 @@
         LoadExampleTree();
     }
 
-    private class TreeLevel
+    private class NodePosition
     {
-        public List<TreeItem> Items { get; set; } = new();
+        public string NodeId { get; set; } = string.Empty;
+        public int X { get; set; }
+        public int Y { get; set; }
+        public int Width { get; set; } = 220;
+        public int Height { get; set; } = 80;
+        public bool IsChoice { get; set; }
+        public string? ChoiceLabel { get; set; }
     }
     
-    private class TreeItem
-    {
-        public string? NodeId { get; set; }
-        public string? BranchLabel { get; set; }
-        public string? ParentNodeId { get; set; }
-        public bool IsAnswerBox { get; set; }
-    }
+    private Dictionary<string, NodePosition> nodePositions = new();
+    private List<(NodePosition from, NodePosition to, string? label)> connections = new();
     
-    private RenderFragment RenderTreeByLevels() => builder =>
+    private void CalculateFlowchartLayout()
     {
-        var levels = BuildTreeLevels();
+        nodePositions.Clear();
+        connections.Clear();
         
-        foreach (var level in levels)
+        if (string.IsNullOrEmpty(startNodeId)) return;
+        
+        int currentY = 50;
+        int centerX = 400;
+        
+        CalculateNodePositions(startNodeId, centerX, currentY, new HashSet<string>());
+    }
+    
+    private int CalculateNodePositions(string nodeId, int x, int y, HashSet<string> visited)
+    {
+        if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId))
+            return y;
+            
+        visited.Add(nodeId);
+        
+        var node = nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (node == null) return y;
+        
+        // Position the current node
+        nodePositions[nodeId] = new NodePosition
         {
-            // Render connector from previous level (except for first level)
-            if (levels.IndexOf(level) > 0)
+            NodeId = nodeId,
+            X = x,
+            Y = y,
+            Width = node.Type == "End" ? 250 : 220,
+            Height = 80
+        };
+        
+        var branches = GetNodeBranches(node);
+        if (!branches.Any() || node.Type == "End")
+            return y + 100;
+        
+        int nextY = y + 150; // Space for choice boxes
+        int choiceY = y + 100;
+        
+        // Calculate total width needed for branches
+        int totalBranches = branches.Count;
+        int branchSpacing = 280;
+        int totalWidth = (totalBranches - 1) * branchSpacing;
+        int startX = x - (totalWidth / 2);
+        
+        int maxBottomY = nextY;
+        
+        for (int i = 0; i < branches.Count; i++)
+        {
+            var branch = branches[i];
+            int branchX = startX + (i * branchSpacing);
+            
+            // Position choice box
+            string choiceKey = $"{nodeId}_choice_{i}";
+            nodePositions[choiceKey] = new NodePosition
             {
+                NodeId = choiceKey,
+                X = branchX,
+                Y = choiceY,
+                Width = 180,
+                Height = 60,
+                IsChoice = true,
+                ChoiceLabel = branch.Label
+            };
+            
+            // Add connection from node to choice
+            connections.Add((nodePositions[nodeId], nodePositions[choiceKey], null));
+            
+            // Position next node if it exists
+            if (!string.IsNullOrEmpty(branch.NextNodeId))
+            {
+                int childBottomY = CalculateNodePositions(branch.NextNodeId, branchX, nextY, visited);
+                maxBottomY = Math.Max(maxBottomY, childBottomY);
+                
+                // Add connection from choice to next node
+                if (nodePositions.ContainsKey(branch.NextNodeId))
+                {
+                    connections.Add((nodePositions[choiceKey], nodePositions[branch.NextNodeId], null));
+                }
+            }
+        }
+        
+        return maxBottomY;
+    }
+    
+    private RenderFragment RenderFlowchart() => builder =>
+    {
+        CalculateFlowchartLayout();
+        
+        foreach (var pos in nodePositions.Values)
+        {
+            if (pos.IsChoice)
+            {
+                // Render choice box
                 builder.OpenElement(0, "div");
-                builder.AddAttribute(1, "class", "connector-down");
+                builder.AddAttribute(1, "class", "flowchart-node choice-node");
+                builder.AddAttribute(2, "style", $"left: {pos.X}px; top: {pos.Y}px; width: {pos.Width}px;");
+                builder.AddContent(3, pos.ChoiceLabel);
                 builder.CloseElement();
             }
-            
-            // Render the row
-            builder.OpenElement(2, "div");
-            builder.AddAttribute(3, "class", "tree-row");
-            
-            foreach (var item in level.Items)
+            else
             {
-                if (item.IsAnswerBox)
-                {
-                    // This is an answer/choice box
-                    builder.OpenElement(4, "div");
-                    builder.AddAttribute(5, "class", "tree-node-wrapper");
-                    
-                    builder.OpenElement(6, "div");
-                    builder.AddAttribute(7, "class", "tree-node-box answer-box");
-                    builder.AddContent(8, item.BranchLabel);
-                    builder.CloseElement();
-                    
-                    builder.CloseElement(); // wrapper
-                }
-                else if (!string.IsNullOrEmpty(item.NodeId))
-                {
-                    // This is a question node
-                    builder.AddContent(9, RenderNodeBox(item.NodeId));
-                }
+                // Render node
+                builder.AddContent(4, RenderFlowchartNode(pos));
             }
-            
-            builder.CloseElement(); // tree-row
         }
     };
     
-    private List<TreeLevel> BuildTreeLevels()
+    private RenderFragment RenderFlowchartNode(NodePosition pos) => builder =>
     {
-        var levels = new List<TreeLevel>();
-        var processedNodes = new HashSet<string>();
-        var queue = new Queue<(string nodeId, int level)>();
+        var node = nodes.FirstOrDefault(n => n.Id == pos.NodeId);
+        if (node == null) return;
         
-        if (!string.IsNullOrEmpty(startNodeId))
-        {
-            queue.Enqueue((startNodeId, 0));
-        }
-        
-        while (queue.Count > 0)
-        {
-            var (nodeId, levelIndex) = queue.Dequeue();
-            
-            if (processedNodes.Contains(nodeId))
-                continue;
-                
-            processedNodes.Add(nodeId);
-            
-            // Ensure we have enough levels
-            while (levels.Count <= levelIndex)
-            {
-                levels.Add(new TreeLevel());
-            }
-            
-            // Add this node to the current level
-            levels[levelIndex].Items.Add(new TreeItem { NodeId = nodeId });
-            
-            // Get branches
-            var node = nodes.FirstOrDefault(n => n.Id == nodeId);
-            if (node != null && node.Type != "End")
-            {
-                var branches = GetNodeBranches(node);
-                if (branches.Any())
-                {
-                    // Add answer boxes to next level
-                    var answerLevel = levelIndex + 1;
-                    while (levels.Count <= answerLevel)
-                    {
-                        levels.Add(new TreeLevel());
-                    }
-                    
-                    foreach (var branch in branches)
-                    {
-                        // Add answer box
-                        levels[answerLevel].Items.Add(new TreeItem 
-                        { 
-                            BranchLabel = branch.Label,
-                            ParentNodeId = nodeId,
-                            IsAnswerBox = true
-                        });
-                        
-                        // Queue the next node if it exists
-                        if (!string.IsNullOrEmpty(branch.NextNodeId))
-                        {
-                            queue.Enqueue((branch.NextNodeId, levelIndex + 2));
-                        }
-                    }
-                }
-            }
-        }
-        
-        return levels;
-    }
-    
-    private RenderFragment RenderNodeBox(string nodeId) => builder =>
-    {
-        var node = nodes.FirstOrDefault(n => n.Id == nodeId);
-        if (node == null)
-            return;
-            
         builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", "tree-node-wrapper");
+        builder.AddAttribute(1, "class", $"flowchart-node {(node.Id == startNodeId ? "start-node" : "")} {(node.Type == "End" ? "end-node" : "")}");
+        builder.AddAttribute(2, "style", $"left: {pos.X}px; top: {pos.Y}px; width: {pos.Width}px;");
+        builder.AddAttribute(3, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
         
-        builder.OpenElement(2, "div");
-        builder.AddAttribute(3, "class", $"tree-node-box {(node.Id == startNodeId ? "start-node" : "")} {(node.Type == "End" ? "end-node" : "")}");
-        
-        // Node header with badge and actions
+        // Node header
         builder.OpenElement(4, "div");
         builder.AddAttribute(5, "class", "node-header");
         
         builder.OpenElement(6, "div");
-        builder.OpenElement(7, "span");
-        builder.AddAttribute(8, "class", $"badge bg-{GetNodeTypeBadge(node.Type)} me-2");
-        builder.AddContent(9, node.Type);
-        builder.CloseElement();
-        builder.OpenElement(10, "strong");
-        builder.AddAttribute(11, "style", "font-size: 12px;");
-        builder.AddContent(12, node.Id);
+        builder.AddAttribute(7, "class", "node-info");
+        builder.OpenElement(8, "span");
+        builder.AddAttribute(9, "class", $"badge bg-{GetNodeTypeBadge(node.Type)}");
+        builder.AddAttribute(10, "style", "font-size: 10px;");
+        builder.AddContent(11, node.Type);
         builder.CloseElement();
         if (node.Id == startNodeId)
         {
-            builder.OpenElement(13, "span");
-            builder.AddAttribute(14, "class", "badge bg-success ms-2");
+            builder.OpenElement(12, "span");
+            builder.AddAttribute(13, "class", "badge bg-success");
+            builder.AddAttribute(14, "style", "font-size: 10px;");
             builder.AddContent(15, "START");
             builder.CloseElement();
         }
@@ -495,15 +493,17 @@
         builder.OpenElement(18, "button");
         builder.AddAttribute(19, "class", "btn btn-sm btn-primary");
         builder.AddAttribute(20, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
-        builder.OpenElement(21, "i");
-        builder.AddAttribute(22, "class", "bi bi-pencil");
+        builder.AddAttribute(21, "style", "padding: 2px 6px; font-size: 12px;");
+        builder.OpenElement(22, "i");
+        builder.AddAttribute(23, "class", "bi bi-pencil");
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(23, "button");
-        builder.AddAttribute(24, "class", "btn btn-sm btn-danger");
-        builder.AddAttribute(25, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
-        builder.OpenElement(26, "i");
-        builder.AddAttribute(27, "class", "bi bi-trash");
+        builder.OpenElement(24, "button");
+        builder.AddAttribute(25, "class", "btn btn-sm btn-danger");
+        builder.AddAttribute(26, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
+        builder.AddAttribute(27, "style", "padding: 2px 6px; font-size: 12px;");
+        builder.OpenElement(28, "i");
+        builder.AddAttribute(29, "class", "bi bi-trash");
         builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
@@ -511,13 +511,51 @@
         builder.CloseElement(); // node-header
         
         // Node prompt
-        builder.OpenElement(28, "div");
-        builder.AddAttribute(29, "class", "node-prompt");
-        builder.AddContent(30, node.Prompt);
+        builder.OpenElement(30, "div");
+        builder.AddAttribute(31, "class", "node-prompt");
+        builder.AddContent(32, node.Prompt);
         builder.CloseElement();
         
-        builder.CloseElement(); // tree-node-box
-        builder.CloseElement(); // wrapper
+        builder.CloseElement(); // flowchart-node
+    };
+    
+    private RenderFragment RenderConnectors() => builder =>
+    {
+        foreach (var (from, to, label) in connections)
+        {
+            // Calculate connection points
+            int fromCenterX = from.X + (from.Width / 2);
+            int fromBottom = from.Y + from.Height;
+            int toCenterX = to.X + (to.Width / 2);
+            int toTop = to.Y;
+            
+            // Draw line
+            builder.OpenElement(0, "line");
+            builder.AddAttribute(1, "x1", fromCenterX);
+            builder.AddAttribute(2, "y1", fromBottom);
+            builder.AddAttribute(3, "x2", toCenterX);
+            builder.AddAttribute(4, "y2", toTop);
+            builder.AddAttribute(5, "stroke", "#6c757d");
+            builder.AddAttribute(6, "stroke-width", "2");
+            builder.AddAttribute(7, "marker-end", "url(#arrowhead)");
+            builder.CloseElement();
+        }
+        
+        // Define arrowhead marker
+        builder.OpenElement(10, "defs");
+        builder.OpenElement(11, "marker");
+        builder.AddAttribute(12, "id", "arrowhead");
+        builder.AddAttribute(13, "markerWidth", "10");
+        builder.AddAttribute(14, "markerHeight", "10");
+        builder.AddAttribute(15, "refX", "5");
+        builder.AddAttribute(16, "refY", "3");
+        builder.AddAttribute(17, "orient", "auto");
+        builder.OpenElement(18, "polygon");
+        builder.AddAttribute(19, "points", "0 0, 10 3, 0 6");
+        builder.AddAttribute(20, "fill", "#6c757d");
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
     };
 
     private List<(string Label, string NextNodeId)> GetNodeBranches(DecisionNode node)
