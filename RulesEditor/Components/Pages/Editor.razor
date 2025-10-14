@@ -34,9 +34,15 @@
         border-color: #dc3545;
     }
     
+    .flow-reference {
+        background: #e9ecef !important;
+        border: 2px dashed #6c757d !important;
+        font-style: italic;
+    }
+    
     .flow-connector {
         width: 2px;
-        height: 20px;
+        height: 30px;
         background: #6c757d;
         margin: 0 auto;
     }
@@ -44,23 +50,26 @@
     .flow-branch-container {
         display: flex;
         justify-content: center;
-        gap: 40px;
-        margin: 20px 0;
+        gap: 60px;
+        margin: 30px 0;
+        flex-wrap: wrap;
     }
     
     .flow-branch {
         flex: 1;
-        max-width: 300px;
+        min-width: 280px;
+        max-width: 400px;
     }
     
     .branch-label {
         background: #0d6efd;
         color: white;
-        padding: 5px 10px;
-        border-radius: 4px;
+        padding: 8px 12px;
+        border-radius: 6px;
         text-align: center;
         font-size: 0.9rem;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
+        font-weight: 500;
     }
     
     .node-header {
@@ -78,7 +87,7 @@
     .add-node-button {
         text-align: center;
         padding: 20px;
-        margin: 10px auto;
+        margin: 15px auto;
         max-width: 600px;
     }
     
@@ -293,12 +302,29 @@
 
     private RenderFragment RenderNodeFlow(string nodeId, string? parentBranchLabel) => builder =>
     {
-        if (string.IsNullOrEmpty(nodeId) || renderedNodes.Contains(nodeId))
+        if (string.IsNullOrEmpty(nodeId))
             return;
 
         var node = nodes.FirstOrDefault(n => n.Id == nodeId);
         if (node == null)
             return;
+
+        // If already rendered, show a reference link instead
+        if (renderedNodes.Contains(nodeId))
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "flow-node flow-reference");
+            builder.AddAttribute(2, "style", "text-align: center; padding: 10px; background: #e9ecef; border: 2px dashed #6c757d;");
+            builder.OpenElement(3, "small");
+            builder.AddContent(4, $"→ Continues at ");
+            builder.OpenElement(5, "strong");
+            builder.AddContent(6, nodeId);
+            builder.CloseElement();
+            builder.AddContent(7, " (see above)");
+            builder.CloseElement();
+            builder.CloseElement();
+            return;
+        }
 
         renderedNodes.Add(nodeId);
 
@@ -477,34 +503,114 @@
 
     private void LoadExampleTree()
     {
-        treeId = "example-tree";
+        treeId = "essence-triage-demo";
         treeVersion = "1.0.0";
-        startNodeId = "start";
+        startNodeId = "q_greeting";
         
         nodes = new List<DecisionNode>
         {
             new DecisionNode
             {
-                Id = "start",
+                Id = "q_greeting",
                 Type = "SingleChoice",
-                Prompt = "How can we help you today?",
+                Prompt = "Welcome to Essence of Oregon support. What brings you here today?",
                 Choices = new List<Choice>
                 {
-                    new Choice { Key = "question", Label = "I have a question", NextNodeId = "end_question" },
-                    new Choice { Key = "issue", Label = "I have an issue", NextNodeId = "end_issue" }
+                    new Choice { Key = "cancel", Label = "I want to cancel my subscription", NextNodeId = "q_reason" },
+                    new Choice { Key = "other", Label = "Something else", NextNodeId = "end_other" }
                 }
             },
             new DecisionNode
             {
-                Id = "end_question",
-                Type = "End",
-                Prompt = "We'll connect you with someone who can answer your question."
+                Id = "q_reason",
+                Type = "SingleChoice",
+                Prompt = "What is the main reason for canceling?",
+                Choices = new List<Choice>
+                {
+                    new Choice { Key = "affordability", Label = "It's too expensive", NextNodeId = "q_usage" },
+                    new Choice { Key = "dont_like", Label = "I didn't like the product", NextNodeId = "end_cancelled" },
+                    new Choice { Key = "other", Label = "Other reason", NextNodeId = "end_escalate" }
+                }
             },
             new DecisionNode
             {
-                Id = "end_issue",
+                Id = "q_usage",
+                Type = "SingleChoice",
+                Prompt = "Have you had a chance to use the product enough to see results?",
+                Choices = new List<Choice>
+                {
+                    new Choice { Key = "yes", Label = "Yes", NextNodeId = "q_discount40" },
+                    new Choice { Key = "no", Label = "Not really", NextNodeId = "q_extend_offer" }
+                }
+            },
+            new DecisionNode
+            {
+                Id = "q_extend_offer",
+                Type = "SingleChoice",
+                Prompt = "We can extend your free trial by 15 days at no charge so you can evaluate further. Would you like to accept the extension?",
+                Choices = new List<Choice>
+                {
+                    new Choice { Key = "accept", Label = "Yes, extend my free trial", NextNodeId = "end_extended" },
+                    new Choice { Key = "decline", Label = "No, I'd still like to cancel", NextNodeId = "q_discount40" }
+                }
+            },
+            new DecisionNode
+            {
+                Id = "q_discount40",
+                Type = "SingleChoice",
+                Prompt = "We can offer a lifetime 40% employee discount. Keep the subscription for $50.28/month (from $83.80)?",
+                Choices = new List<Choice>
+                {
+                    new Choice { Key = "accept", Label = "Accept $50.28/month", NextNodeId = "end_keep40" },
+                    new Choice { Key = "decline", Label = "Still can't afford it", NextNodeId = "q_affordable_price" }
+                }
+            },
+            new DecisionNode
+            {
+                Id = "q_affordable_price",
+                Type = "Number",
+                Prompt = "What monthly price (USD) would make it affordable for you?",
+                Rules = new List<Rule>
+                {
+                    new Rule { Operator = "LessThanOrEqual", Value = "20", NextNodeId = "end_supervisor_80" },
+                    new Rule { Operator = "GreaterThan", Value = "20", NextNodeId = "end_cancelled" }
+                }
+            },
+            new DecisionNode
+            {
+                Id = "end_extended",
                 Type = "End",
-                Prompt = "We'll help you resolve your issue."
+                Prompt = "Your free trial has been extended by 15 days. Please evaluate and contact us before it ends if you still wish to cancel."
+            },
+            new DecisionNode
+            {
+                Id = "end_keep40",
+                Type = "End",
+                Prompt = "Great! Your subscription will continue at the 40% discounted rate of $50.28/month."
+            },
+            new DecisionNode
+            {
+                Id = "end_supervisor_80",
+                Type = "End",
+                Prompt = "Approved by supervisor: lifetime 80% discount. Your monthly price will be $16.76."
+            },
+            new DecisionNode
+            {
+                Id = "end_cancelled",
+                Type = "End",
+                Prompt = "Understood. Your subscription is canceled. Thank you for trying Essence of Oregon."
+            },
+            new DecisionNode
+            {
+                Id = "end_escalate",
+                Type = "End",
+                Prompt = "Thanks for the feedback. A specialist will review and follow up regarding your cancellation request."
+            },
+            new DecisionNode
+            {
+                Id = "end_other",
+                Type = "End",
+                Prompt = "Thanks for reaching out. Please contact support for assistance with non-cancellation inquiries."
             }
         };
         
