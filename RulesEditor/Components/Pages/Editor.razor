@@ -632,13 +632,16 @@
             }
 
             // Always drop down from source node first before routing
-            int dropDownAmount = 40; // Minimum drop down from source node
-            int firstSegmentY = fromBottom + dropDownAmount;
+            int dropDownAmount = 30; // Minimum drop down from source node
+            int approachAmount = 30; // Minimum approach distance above target node
+            
+            int exitY = fromBottom + dropDownAmount; // Where line exits source (going down)
+            int approachY = toTop - approachAmount; // Where line approaches target (from above)
 
             // Draw straight or angled line
-            if (Math.Abs(fromCenterX - toCenterX) < 10 && horizontalOffset == 0 && fromBottom < toTop)
+            if (Math.Abs(fromCenterX - toCenterX) < 10 && horizontalOffset == 0 && exitY < approachY)
             {
-                // Straight line (only if no offset and going downward)
+                // Straight line (only if no offset, going downward, and enough space)
                 builder.OpenElement(11, "line");
                 builder.AddAttribute(12, "x1", fromCenterX);
                 builder.AddAttribute(13, "y1", fromBottom);
@@ -651,23 +654,26 @@
             }
             else
             {
-                // Angled line with path - always drop down first, then route
-                int midY;
-                if (fromBottom < toTop)
+                // Angled path following the rules:
+                // 1. Exit from bottom, go down
+                // 2. Route horizontally
+                // 3. Approach from above, go down to top
+                
+                string path;
+                if (exitY < approachY)
                 {
-                    // Normal downward flow - use point above target
-                    midY = toTop - 40;
+                    // Normal flow: exit point is above approach point
+                    // Use a routing Y between exit and approach
+                    int routingY = (exitY + approachY) / 2;
+                    path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {toCenterX} {routingY} L {toCenterX} {toTop}";
                 }
                 else
                 {
-                    // Backward/upward reference - still drop down first, then route back up
-                    midY = Math.Max(firstSegmentY, (fromBottom + toTop) / 2);
+                    // Complex flow: need to route around (backward/upward connection)
+                    // Go down from source, route horizontally at lower level, come back up to approach level, then down to target
+                    int routingY = exitY + 20; // Go down a bit more for clearance
+                    path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {toCenterX} {routingY} L {toCenterX} {approachY} L {toCenterX} {toTop}";
                 }
-                
-                // Ensure we drop down from source before routing horizontally
-                int routingY = Math.Max(firstSegmentY, midY);
-                
-                string path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {toCenterX} {routingY} L {toCenterX} {toTop}";
 
                 builder.OpenElement(19, "path");
                 builder.AddAttribute(20, "d", path);
