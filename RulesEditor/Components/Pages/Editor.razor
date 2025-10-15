@@ -92,6 +92,7 @@
                     <option value="End">End - Terminal node</option>
                     <option value="SingleChoice">Single Choice - Multiple options</option>
                     <option value="Number">Number - Numeric evaluation</option>
+                    <option value="Text">Text - Simple node with next connection</option>
                 </select>
             </div>
 
@@ -209,6 +210,21 @@
                             </div>
                         }
                     }
+                </div>
+            }
+
+            @if (editingNode.Type == "Text")
+            {
+                <div class="mb-3">
+                    <label class="form-label"><strong>Next Node</strong></label>
+                    <select class="form-select" @bind="editingNode.DefaultNextNodeId">
+                        <option value="">-- Select Next Node --</option>
+                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id))
+                        {
+                            <option value="@node.Id">@node.Id</option>
+                        }
+                        <option value="_new_">+ Create New Node</option>
+                    </select>
                 </div>
             }
 
@@ -479,38 +495,44 @@
 
         builder.OpenElement(7, "div");
         builder.AddAttribute(8, "class", "node-info");
+        // Node name/ID in top left
         builder.OpenElement(9, "span");
-        builder.AddAttribute(10, "class", $"badge bg-{GetNodeTypeBadge(node.Type)}");
-        builder.AddAttribute(11, "style", "font-size: 10px;");
-        builder.AddContent(12, node.Type);
+        builder.AddAttribute(10, "class", "node-name");
+        builder.AddAttribute(11, "style", "font-weight: 600; font-size: 12px; margin-right: 8px;");
+        builder.AddContent(12, node.Id);
+        builder.CloseElement();
+        builder.OpenElement(13, "span");
+        builder.AddAttribute(14, "class", $"badge bg-{GetNodeTypeBadge(node.Type)}");
+        builder.AddAttribute(15, "style", "font-size: 10px;");
+        builder.AddContent(16, node.Type);
         builder.CloseElement();
         if (node.Id == startNodeId)
         {
-            builder.OpenElement(13, "span");
-            builder.AddAttribute(14, "class", "badge bg-success");
-            builder.AddAttribute(15, "style", "font-size: 10px;");
-            builder.AddContent(16, "START");
+            builder.OpenElement(17, "span");
+            builder.AddAttribute(18, "class", "badge bg-success");
+            builder.AddAttribute(19, "style", "font-size: 10px;");
+            builder.AddContent(20, "START");
             builder.CloseElement();
         }
         builder.CloseElement();
 
         // Actions
-        builder.OpenElement(17, "div");
-        builder.AddAttribute(18, "class", "node-actions");
-        builder.OpenElement(19, "button");
-        builder.AddAttribute(20, "class", "btn btn-sm btn-primary");
-        builder.AddAttribute(21, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
-        builder.AddAttribute(22, "style", "padding: 2px 6px; font-size: 12px;");
-        builder.OpenElement(23, "i");
-        builder.AddAttribute(24, "class", "bi bi-pencil");
+        builder.OpenElement(21, "div");
+        builder.AddAttribute(22, "class", "node-actions");
+        builder.OpenElement(23, "button");
+        builder.AddAttribute(24, "class", "btn btn-sm btn-primary");
+        builder.AddAttribute(25, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
+        builder.AddAttribute(26, "style", "padding: 2px 6px; font-size: 12px;");
+        builder.OpenElement(27, "i");
+        builder.AddAttribute(28, "class", "bi bi-pencil");
         builder.CloseElement();
         builder.CloseElement();
-        builder.OpenElement(25, "button");
-        builder.AddAttribute(26, "class", "btn btn-sm btn-danger");
-        builder.AddAttribute(27, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
-        builder.AddAttribute(28, "style", "padding: 2px 6px; font-size: 12px;");
-        builder.OpenElement(29, "i");
-        builder.AddAttribute(30, "class", "bi bi-trash");
+        builder.OpenElement(29, "button");
+        builder.AddAttribute(30, "class", "btn btn-sm btn-danger");
+        builder.AddAttribute(31, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
+        builder.AddAttribute(32, "style", "padding: 2px 6px; font-size: 12px;");
+        builder.OpenElement(33, "i");
+        builder.AddAttribute(34, "class", "bi bi-trash");
         builder.CloseElement();
         builder.CloseElement();
         builder.CloseElement();
@@ -518,9 +540,9 @@
         builder.CloseElement(); // node-header
 
         // Node prompt
-        builder.OpenElement(31, "div");
-        builder.AddAttribute(32, "class", "node-prompt");
-        builder.AddContent(33, node.Prompt);
+        builder.OpenElement(35, "div");
+        builder.AddAttribute(36, "class", "node-prompt");
+        builder.AddContent(37, node.Prompt);
         builder.CloseElement();
 
         builder.CloseElement(); // flowchart-node
@@ -574,7 +596,14 @@
             else
             {
                 // Angled line with path
-                int midY = (fromBottom + toTop) / 2;
+                // Use a midY closer to the target to make it clear we're connecting to the input
+                int midY = toTop - 40; // Position horizontal segment just above the target node
+                // But ensure midY is between the two points for proper routing
+                if (fromBottom < toTop)
+                {
+                    // Connecting upward (back-reference), use midpoint
+                    midY = (fromBottom + toTop) / 2;
+                }
                 string path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {midY} L {toCenterX} {midY} L {toCenterX} {toTop}";
 
                 builder.OpenElement(19, "path");
@@ -605,6 +634,10 @@
             {
                 branches.Add(($"{rule.Operator} {rule.Value}", rule.NextNodeId ?? ""));
             }
+        }
+        else if (node.Type == "Text" && !string.IsNullOrEmpty(node.DefaultNextNodeId))
+        {
+            branches.Add(("Next", node.DefaultNextNodeId));
         }
 
         return branches;
@@ -793,6 +826,19 @@
                         rule.NextNodeId = newNode.Id;
                     }
                 }
+            }
+
+            // Process Text nodes - create new node for "_new_" selection
+            if (editingNode.Type == "Text" && editingNode.DefaultNextNodeId == "_new_")
+            {
+                var newNode = new DecisionNode
+                {
+                    Id = $"node_{nodes.Count + 1}",
+                    Type = "End",
+                    Prompt = "Enter your prompt here"
+                };
+                nodes.Add(newNode);
+                editingNode.DefaultNextNodeId = newNode.Id;
             }
         }
 
@@ -986,6 +1032,7 @@
         "End" => "danger",
         "SingleChoice" => "primary",
         "Number" => "warning",
+        "Text" => "info",
         _ => "secondary"
     };
 
