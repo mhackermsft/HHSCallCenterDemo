@@ -98,8 +98,8 @@
                                         }
                                     </div>
                                     <div class="node-actions">
-                                        <button class="btn btn-sm btn-primary" style="padding:2px 6px;font-size:12px;" @onclick="() => EditNode(node)"><i class="bi bi-pencil"></i></button>
-                                        <button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:12px;" @onclick="() => DeleteNode(node)"><i class="bi bi-trash"></i></button>
+                                        <button class="btn btn-sm btn-primary" style="padding:2px 6px;font-size:12px;" @onclick:stopPropagation="true" @onclick="() => EditNode(node)"><i class="bi bi-pencil"></i></button>
+                                        <button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:12px;" @onclick:stopPropagation="true" @onclick="() => DeleteNode(node)"><i class="bi bi-trash"></i></button>
                                     </div>
                                 </div>
                                 @if (!string.Equals(node.Type, "End", StringComparison.OrdinalIgnoreCase))
@@ -403,6 +403,8 @@
 
     private void DeleteNode(DecisionNode node)
     {
+        // Ensure edit modal is not shown after deletion
+        if (editingNode == node) editingNode = null;
         nodes.Remove(node); if (startNodeId == node.Id) startNodeId = nodes.Any() ? nodes.First().Id : "";
         foreach (var n in nodes)
         {
