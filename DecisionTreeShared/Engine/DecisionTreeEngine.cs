@@ -40,7 +40,7 @@ namespace DecisionTreeShared.Engine
         }
 
         /// <summary>
-        /// Validates the decision tree for missing links, cycles, and unreachable nodes
+        /// Validates the decision tree for missing links, cycles, unreachable nodes, and duplicate IDs
         /// </summary>
         private void ValidateTree(DecisionTree tree)
         {
@@ -49,13 +49,43 @@ namespace DecisionTreeShared.Engine
                 throw new InvalidOperationException("Decision tree must have a startNodeId");
             }
 
+            if (tree.Nodes == null || tree.Nodes.Count == 0)
+            {
+                throw new InvalidOperationException("Decision tree must contain at least one node");
+            }
+
             if (!tree.Nodes.ContainsKey(tree.StartNodeId))
             {
                 throw new InvalidOperationException($"Start node '{tree.StartNodeId}' not found in nodes");
             }
 
+            // Ensure every node has a unique ID (case-insensitive) and matches its dictionary key
+            var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in tree.Nodes)
+            {
+                var key = kvp.Key;
+                var node = kvp.Value;
+                if (node == null)
+                {
+                    throw new InvalidOperationException($"Node entry with key '{key}' is null");
+                }
+                if (string.IsNullOrWhiteSpace(node.Id))
+                {
+                    throw new InvalidOperationException($"Node with dictionary key '{key}' has an empty Id value");
+                }
+                // Warn/validate mismatch between key and node.Id
+                if (!string.Equals(key, node.Id, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException($"Node id mismatch: dictionary key '{key}' does not match node object's Id '{node.Id}'");
+                }
+                if (!seenIds.Add(node.Id))
+                {
+                    throw new InvalidOperationException($"Duplicate node Id detected: '{node.Id}'");
+                }
+            }
+
             // Validate all node references and check for missing links
-            var allNodeIds = tree.Nodes.Keys.ToHashSet();
+            var allNodeIds = tree.Nodes.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var kvp in tree.Nodes)
             {
                 var node = kvp.Value;
