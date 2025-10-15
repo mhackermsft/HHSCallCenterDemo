@@ -656,7 +656,7 @@
             {
                 // Angled path following the rules:
                 // 1. Exit from bottom, go down
-                // 2. Route horizontally
+                // 2. Route horizontally (partway for backward refs)
                 // 3. Approach from above, go down to top
                 
                 string path;
@@ -670,9 +670,16 @@
                 else
                 {
                     // Complex flow: need to route around (backward/upward connection)
-                    // Go down from source, route horizontally at lower level, come back up to approach level, then down to target
+                    // Path: down from source -> horizontal partway -> up to approach level -> horizontal to target -> down to target
                     int routingY = exitY + 20; // Go down a bit more for clearance
-                    path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {toCenterX} {routingY} L {toCenterX} {approachY} L {toCenterX} {toTop}";
+                    
+                    // Calculate intermediate X position (don't go all the way to target at lower level)
+                    // Go about 70% of the way horizontally before going up
+                    int horizontalDistance = toCenterX - fromCenterX;
+                    int intermediateX = fromCenterX + (int)(horizontalDistance * 0.7);
+                    
+                    // 5-segment path to avoid going through target node
+                    path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {intermediateX} {routingY} L {intermediateX} {approachY} L {toCenterX} {approachY} L {toCenterX} {toTop}";
                 }
 
                 builder.OpenElement(19, "path");
