@@ -65,8 +65,51 @@
         else
         {
             <div class="flowchart-canvas">
-                <svg class="flowchart-svg">@RenderConnectors()</svg>
-                @RenderFlowchart()
+                <svg class="flowchart-svg">
+                    <defs>
+                        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                            <polygon points="0 0, 10 3, 0 6" fill="#495057" />
+                        </marker>
+                    </defs>
+                    @foreach (var d in connectorPaths)
+                    {
+                        <path d="@d" stroke="#495057" stroke-width="2" fill="none" marker-end="url(#arrowhead)" />
+                    }
+                </svg>
+                @foreach (var pos in nodePositions.Values)
+                {
+                    if (pos.IsChoice)
+                    {
+                        <div class="flowchart-node choice-node" style="left:@(pos.X)px; top:@(pos.Y)px; width:@(pos.Width)px;">@pos.ChoiceLabel</div>
+                    }
+                    else
+                    {
+                        var node = nodes.FirstOrDefault(n => n.Id == pos.NodeId);
+                        if (node != null)
+                        {
+                            <div class="flowchart-node @(node.Id == startNodeId ? "start-node" : null) @(node.Type == "End" ? "end-node" : null)" style="left:@(pos.X)px; top:@(pos.Y)px; width:@(pos.Width)px;" @onclick="() => EditNode(node)" data-node-id="@node.Id">
+                                <div class="node-header">
+                                    <div class="node-info">
+                                        <span class="node-name" style="font-weight:600;font-size:12px;margin-right:8px;">@node.Id</span>
+                                        <span class="badge bg-@GetNodeTypeBadge(node.Type)" style="font-size:10px;">@node.Type</span>
+                                        @if (node.Id == startNodeId)
+                                        {
+                                            <span class="badge bg-success" style="font-size:10px;">START</span>
+                                        }
+                                    </div>
+                                    <div class="node-actions">
+                                        <button class="btn btn-sm btn-primary" style="padding:2px 6px;font-size:12px;" @onclick="() => EditNode(node)"><i class="bi bi-pencil"></i></button>
+                                        <button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:12px;" @onclick="() => DeleteNode(node)"><i class="bi bi-trash"></i></button>
+                                    </div>
+                                </div>
+                                @if (!string.Equals(node.Type, "End", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <div class="node-prompt">@node.Prompt</div>
+                                }
+                            </div>
+                        }
+                    }
+                }
             </div>
         }
     </div>
@@ -96,55 +139,40 @@
                 </select>
             </div>
 
-            <div class="mb-3">
-                <label class="form-label"><strong>Prompt / Message</strong></label>
-                <textarea class="form-control" rows="3" @bind="editingNode.Prompt"></textarea>
-            </div>
+            @if (editingNode.Type != "End")
+            {
+                <div class="mb-3">
+                    <label class="form-label"><strong>Prompt / Message</strong></label>
+                    <textarea class="form-control" rows="3" @bind="editingNode.Prompt"></textarea>
+                </div>
+            }
 
             @if (editingNode.Type == "SingleChoice")
             {
                 <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <label class="form-label mb-0"><strong>Choices</strong></label>
-                        <button class="btn btn-sm btn-primary" @onclick="AddChoice">
-                            <i class="bi bi-plus"></i> Add Choice
-                        </button>
+                        <button class="btn btn-sm btn-primary" @onclick="AddChoice"><i class="bi bi-plus"></i> Add Choice</button>
                     </div>
-                    
                     @if (editingNode.Choices != null && editingNode.Choices.Any())
                     {
                         @for (int i = 0; i < editingNode.Choices.Count; i++)
                         {
-                            var index = i;
-                            var choice = editingNode.Choices[index];
+                            var index = i; var choice = editingNode.Choices[index];
                             <div class="card mb-2">
                                 <div class="card-body p-2">
                                     <div class="d-flex justify-content-between mb-2">
                                         <small class="text-muted">Choice @(index + 1)</small>
-                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveChoice(index)">
-                                            <i class="bi bi-x"></i>
-                                        </button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveChoice(index)"><i class="bi bi-x"></i></button>
                                     </div>
-                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
-                                        <strong>Key</strong> 
-                                        <span class="text-muted" title="Unique identifier used internally for this choice">ℹ️</span>
-                                    </label>
+                                    <label class="form-label form-label-sm mb-1" style="font-size:0.85rem;"><strong>Key</strong> <span class="text-muted" title="Unique identifier used internally for this choice">ℹ️</span></label>
                                     <input type="text" class="form-control form-control-sm mb-2" placeholder="e.g., yes, no, option1" @bind="choice.Key" />
-                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
-                                        <strong>Label</strong> 
-                                        <span class="text-muted" title="User-friendly text shown for this choice">ℹ️</span>
-                                    </label>
+                                    <label class="form-label form-label-sm mb-1" style="font-size:0.85rem;"><strong>Label</strong> <span class="text-muted" title="User-friendly text shown for this choice">ℹ️</span></label>
                                     <input type="text" class="form-control form-control-sm mb-2" placeholder="e.g., Yes, No, First Option" @bind="choice.Label" />
-                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
-                                        <strong>Next Node</strong>
-                                        <span class="text-muted" title="Which node to go to when this choice is selected">ℹ️</span>
-                                    </label>
+                                    <label class="form-label form-label-sm mb-1" style="font-size:0.85rem;"><strong>Next Node</strong> <span class="text-muted" title="Which node to go to when this choice is selected">ℹ️</span></label>
                                     <select class="form-select form-select-sm" @bind="choice.NextNodeId">
                                         <option value="">-- Select Next Node --</option>
-                                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id))
-                                        {
-                                            <option value="@node.Id">@node.Id</option>
-                                        }
+                                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id)) { <option value="@node.Id">@node.Id</option> }
                                         <option value="_new_">+ Create New Node</option>
                                     </select>
                                 </div>
@@ -153,35 +181,25 @@
                     }
                 </div>
             }
-
             @if (editingNode.Type == "Number")
             {
                 <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <label class="form-label mb-0"><strong>Rules</strong></label>
-                        <button class="btn btn-sm btn-primary" @onclick="AddRule">
-                            <i class="bi bi-plus"></i> Add Rule
-                        </button>
+                        <button class="btn btn-sm btn-primary" @onclick="AddRule"><i class="bi bi-plus"></i> Add Rule</button>
                     </div>
-                    
                     @if (editingNode.Rules != null && editingNode.Rules.Any())
                     {
                         @for (int i = 0; i < editingNode.Rules.Count; i++)
                         {
-                            var index = i;
-                            var rule = editingNode.Rules[index];
+                            var index = i; var rule = editingNode.Rules[index];
                             <div class="card mb-2">
                                 <div class="card-body p-2">
                                     <div class="d-flex justify-content-between mb-2">
                                         <small class="text-muted">Rule @(index + 1)</small>
-                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveRule(index)">
-                                            <i class="bi bi-x"></i>
-                                        </button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveRule(index)"><i class="bi bi-x"></i></button>
                                     </div>
-                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
-                                        <strong>Operator</strong>
-                                        <span class="text-muted" title="Comparison operation to apply">ℹ️</span>
-                                    </label>
+                                    <label class="form-label form-label-sm mb-1" style="font-size:0.85rem;"><strong>Operator</strong> <span class="text-muted" title="Comparison operation to apply">ℹ️</span></label>
                                     <select class="form-select form-select-sm mb-2" @bind="rule.Operator">
                                         <option value="LessThan">Less Than (&lt;)</option>
                                         <option value="LessThanOrEqual">Less Than or Equal (&lt;=)</option>
@@ -189,21 +207,12 @@
                                         <option value="GreaterOrEqual">Greater Than or Equal (&gt;=)</option>
                                         <option value="Equal">Equal (=)</option>
                                     </select>
-                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
-                                        <strong>Value</strong>
-                                        <span class="text-muted" title="Numeric threshold to compare against">ℹ️</span>
-                                    </label>
+                                    <label class="form-label form-label-sm mb-1" style="font-size:0.85rem;"><strong>Value</strong> <span class="text-muted" title="Numeric threshold to compare against">ℹ️</span></label>
                                     <input type="number" class="form-control form-control-sm mb-2" placeholder="e.g., 100, 30, 0" @bind="rule.Value" />
-                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
-                                        <strong>Next Node</strong>
-                                        <span class="text-muted" title="Which node to go to when this rule matches">ℹ️</span>
-                                    </label>
+                                    <label class="form-label form-label-sm mb-1" style="font-size:0.85rem;"><strong>Next Node</strong> <span class="text-muted" title="Which node to go to when this rule matches">ℹ️</span></label>
                                     <select class="form-select form-select-sm" @bind="rule.NextNodeId">
                                         <option value="">-- Select Next Node --</option>
-                                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id))
-                                        {
-                                            <option value="@node.Id">@node.Id</option>
-                                        }
+                                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id)) { <option value="@node.Id">@node.Id</option> }
                                         <option value="_new_">+ Create New Node</option>
                                     </select>
                                 </div>
@@ -212,22 +221,17 @@
                     }
                 </div>
             }
-
             @if (editingNode.Type == "Text")
             {
                 <div class="mb-3">
                     <label class="form-label"><strong>Next Node</strong></label>
                     <select class="form-select" @bind="editingNode.DefaultNextNodeId">
                         <option value="">-- Select Next Node --</option>
-                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id))
-                        {
-                            <option value="@node.Id">@node.Id</option>
-                        }
+                        @foreach (var node in nodes.Where(n => n.Id != editingNode.Id)) { <option value="@node.Id">@node.Id</option> }
                         <option value="_new_">+ Create New Node</option>
                     </select>
                 </div>
             }
-
             <div class="d-flex gap-2 justify-content-end">
                 <button class="btn btn-secondary" @onclick="CloseEditModal">Close</button>
                 <button class="btn btn-primary" @onclick="SaveEditedNode">Save Changes</button>
@@ -245,10 +249,16 @@
     private string statusMessage = "";
     private bool isSuccess = false;
     private HashSet<string> renderedNodes = new();
-    private bool pendingScrollToStart = false; // flag to trigger scrolling after render
+    private bool pendingScrollToStart = false;
     private IJSObjectReference? scrollModule;
     private IJSObjectReference? downloadModule;
-    private int statusMessageVersion = 0; // used to avoid race clearing newer messages
+    private int statusMessageVersion = 0;
+
+    private class NodePosition { public string NodeId { get; set; } = string.Empty; public int X { get; set; } public int Y { get; set; } public int Width { get; set; } = 220; public int Height { get; set; } = 80; public bool IsChoice { get; set; } public string? ChoiceLabel { get; set; } }
+    private Dictionary<string, NodePosition> nodePositions = new();
+    private List<(NodePosition from, NodePosition to, string? label)> connections = new();
+    private List<string> connectorPaths = new();
+    private bool layoutCalculated = false;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -257,882 +267,220 @@
             scrollModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/editorScroll.js");
             downloadModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fileDownload.js");
         }
-
         if (pendingScrollToStart && !string.IsNullOrEmpty(startNodeId) && scrollModule != null)
         {
             pendingScrollToStart = false;
-            try
-            {
-                await scrollModule.InvokeVoidAsync("scrollToNode", startNodeId);
-            }
-            catch { /* swallow */ }
+            try { await scrollModule.InvokeVoidAsync("scrollToNode", startNodeId); } catch { }
         }
     }
-
-    private async Task LoadDefaultFromDisk()
-    {
-        await Task.Yield();
-        var result = TreeService.LoadDefaultFile();
-        if (result.Success && result.Tree != null)
-        {
-            treeId = result.Tree.Id;
-            treeVersion = result.Tree.Version;
-            startNodeId = result.Tree.StartNodeId;
-            nodes = result.Tree.Nodes.Values.ToList();
-            editingNode = null;
-            ShowStatus("Loaded rules.json from server", true);
-            renderedNodes.Clear();
-            layoutCalculated = false;
-            CalculateFlowchartLayout();
-            if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
-        }
-        else
-        {
-            ShowStatus($"Error loading rules.json: {result.ErrorMessage}", false);
-        }
-        StateHasChanged();
-    }
-
-    private class NodePosition { public string NodeId { get; set; } = string.Empty; public int X { get; set; } public int Y { get; set; } public int Width { get; set; } = 220; public int Height { get; set; } = 80; public bool IsChoice { get; set; } public string? ChoiceLabel { get; set; }
-    }
-    private Dictionary<string, NodePosition> nodePositions = new();
-    private List<(NodePosition from, NodePosition to, string? label)> connections = new();
-    private bool layoutCalculated = false;
 
     private void CalculateFlowchartLayout()
     {
         nodePositions.Clear();
         connections.Clear();
-
+        connectorPaths.Clear();
         if (string.IsNullOrEmpty(startNodeId)) return;
 
         int currentY = 100;
-
-        // First pass: calculate tree width needed
         var subtreeWidths = new Dictionary<string, int>();
         int totalTreeWidth = CalculateSubtreeWidths(startNodeId, new HashSet<string>(), subtreeWidths);
-
-        // Position start node centered based on total tree width
-        int centerX = Math.Max(1200, (totalTreeWidth / 2) + 500); // Ensure enough left margin
-
-        // Second pass: position nodes with proper spacing
+        int centerX = Math.Max(1200, (totalTreeWidth / 2) + 500);
         CalculateNodePositions(startNodeId, centerX, currentY, new HashSet<string>(), subtreeWidths);
-
+        BuildConnectorPaths();
         layoutCalculated = true;
+    }
+
+    private void BuildConnectorPaths()
+    {
+        foreach (var (from, to, _) in connections)
+        {
+            int fromCenterX = from.X + (from.Width / 2);
+            int fromBottom = from.Y + from.Height;
+            int toCenterX = to.X + (to.Width / 2);
+            int toTop = to.Y;
+            int dropDownAmount = 30; int approachAmount = 30;
+            int exitY = fromBottom + dropDownAmount; int approachY = toTop - approachAmount;
+            string pathData;
+            if (exitY < approachY)
+            {
+                int routingY = (exitY + approachY) / 2;
+                pathData = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {toCenterX} {routingY} L {toCenterX} {toTop}";
+            }
+            else
+            {
+                int routingY = exitY + 20; int horizontalDistance = toCenterX - fromCenterX; int intermediateX = fromCenterX + (int)(horizontalDistance * 0.7);
+                pathData = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {intermediateX} {routingY} L {intermediateX} {approachY} L {toCenterX} {approachY} L {toCenterX} {toTop}";
+            }
+            connectorPaths.Add(pathData);
+        }
     }
 
     private int CalculateSubtreeWidths(string nodeId, HashSet<string> visited, Dictionary<string, int> subtreeWidths)
     {
-        if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId))
-            return 0;
-
+        if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId)) return 0;
         visited.Add(nodeId);
-
-        var node = nodes.FirstOrDefault(n => n.Id == nodeId);
-        if (node == null) return 400; // Default width for missing nodes
-
+        var node = nodes.FirstOrDefault(n => n.Id == nodeId); if (node == null) return 400;
         var branches = GetNodeBranches(node);
-        if (!branches.Any() || node.Type == "End")
-        {
-            subtreeWidths[nodeId] = 400; // Width for a single node with good margin
-            return 400;
-        }
-
-        // Calculate total width needed for all child branches
+        if (!branches.Any() || node.Type == "End") { subtreeWidths[nodeId] = 400; return 400; }
         int totalWidth = 0;
-        foreach (var branch in branches)
+        foreach (var b in branches)
         {
-            if (!string.IsNullOrEmpty(branch.NextNodeId))
-            {
-                int childWidth = CalculateSubtreeWidths(branch.NextNodeId, visited, subtreeWidths);
-                totalWidth += childWidth;
-            }
-            else
-            {
-                totalWidth += 400; // Width for branch without next node
-            }
+            if (!string.IsNullOrEmpty(b.NextNodeId)) totalWidth += CalculateSubtreeWidths(b.NextNodeId, visited, subtreeWidths); else totalWidth += 400;
         }
-
-        // Add generous spacing between branches to prevent overlap
-        totalWidth += (branches.Count - 1) * 250; // 250px spacing between branches
-
+        totalWidth += (branches.Count - 1) * 250;
         subtreeWidths[nodeId] = Math.Max(totalWidth, 400);
         return subtreeWidths[nodeId];
     }
 
     private int CalculateNodePositions(string nodeId, int x, int y, HashSet<string> visited, Dictionary<string, int> subtreeWidths)
     {
-        if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId))
-            return y;
-
+        if (visited.Contains(nodeId) || string.IsNullOrEmpty(nodeId)) return y;
         visited.Add(nodeId);
-
-        var node = nodes.FirstOrDefault(n => n.Id == nodeId);
-        if (node == null) return y;
-
-        // Position the current node
-        nodePositions[nodeId] = new NodePosition
-        {
-            NodeId = nodeId,
-            X = x - 140, // Center the node (280px wide / 2)
-            Y = y,
-            Width = node.Type == "End" ? 300 : 280,
-            Height = 95
-        };
-
+        var node = nodes.FirstOrDefault(n => n.Id == nodeId); if (node == null) return y;
+        nodePositions[nodeId] = new NodePosition { NodeId = nodeId, X = x - 140, Y = y, Width = node.Type == "End" ? 300 : 280, Height = 95 };
         var branches = GetNodeBranches(node);
-        if ((!branches.Any() && node.Type != "Text") || node.Type == "End")
-            return y + 220;
-
-        // Text nodes connect directly without choice boxes
+        if ((!branches.Any() && node.Type != "Text") || node.Type == "End") return y + 220;
         if (node.Type == "Text" && !string.IsNullOrEmpty(node.DefaultNextNodeId))
         {
-            int textNextY = y + 220; // Direct connection spacing
+            int textNextY = y + 220;
             if (!visited.Contains(node.DefaultNextNodeId))
             {
                 int childBottomY = CalculateNodePositions(node.DefaultNextNodeId, x, textNextY, visited, subtreeWidths);
-                if (nodePositions.ContainsKey(node.DefaultNextNodeId))
-                {
-                    connections.Add((nodePositions[nodeId], nodePositions[node.DefaultNextNodeId], null));
-                }
+                if (nodePositions.ContainsKey(node.DefaultNextNodeId)) connections.Add((nodePositions[nodeId], nodePositions[node.DefaultNextNodeId], null));
                 return childBottomY;
             }
-            else
-            {
-                if (nodePositions.ContainsKey(node.DefaultNextNodeId))
-                {
-                    connections.Add((nodePositions[nodeId], nodePositions[node.DefaultNextNodeId], null));
-                }
-                return textNextY + 100;
-            }
+            else { if (nodePositions.ContainsKey(node.DefaultNextNodeId)) connections.Add((nodePositions[nodeId], nodePositions[node.DefaultNextNodeId], null)); return textNextY + 100; }
         }
-
-        int nextY = y + 320; // Increased vertical space for clear arrow visibility
-        int choiceY = y + 160; // Space for choice boxes
-
-        // Calculate positions for branches based on subtree widths
-        int nodeWidth = subtreeWidths.ContainsKey(nodeId) ? subtreeWidths[nodeId] : 400;
-        int startX = x - (nodeWidth / 2);
-        int currentX = startX;
-        
-        int maxBottomY = nextY;
-
+        int nextY = y + 320; int choiceY = y + 160; int nodeWidth = subtreeWidths.ContainsKey(nodeId) ? subtreeWidths[nodeId] : 400; int startX = x - (nodeWidth / 2); int currentX = startX; int maxBottomY = nextY;
         for (int i = 0; i < branches.Count; i++)
         {
-            var branch = branches[i];
-
-            // Get width for this branch's subtree
-            int branchWidth = 400;
-            if (!string.IsNullOrEmpty(branch.NextNodeId) && subtreeWidths.ContainsKey(branch.NextNodeId))
-            {
-                branchWidth = subtreeWidths[branch.NextNodeId];
-            }
-
-            int branchCenterX = currentX + (branchWidth / 2);
-
-            // Position choice box
-            string choiceKey = $"{nodeId}_choice_{i}";
-            nodePositions[choiceKey] = new NodePosition
-            {
-                NodeId = choiceKey,
-                X = branchCenterX - 110, // Center the 220px wide choice box
-                Y = choiceY,
-                Width = 220,
-                Height = 75,
-                IsChoice = true,
-                ChoiceLabel = branch.Label
-            };
-
-            // Add connection from node to choice
+            var b = branches[i]; int branchWidth = 400; if (!string.IsNullOrEmpty(b.NextNodeId) && subtreeWidths.ContainsKey(b.NextNodeId)) branchWidth = subtreeWidths[b.NextNodeId]; int branchCenterX = currentX + (branchWidth / 2);
+            string choiceKey = $"{nodeId}_choice_{i}"; nodePositions[choiceKey] = new NodePosition { NodeId = choiceKey, X = branchCenterX - 110, Y = choiceY, Width = 220, Height = 75, IsChoice = true, ChoiceLabel = b.Label };
             connections.Add((nodePositions[nodeId], nodePositions[choiceKey], null));
-
-            // Position next node if it exists and hasn't been visited yet
-            if (!string.IsNullOrEmpty(branch.NextNodeId))
+            if (!string.IsNullOrEmpty(b.NextNodeId))
             {
-                bool willPositionNextNode = !visited.Contains(branch.NextNodeId);
-
-                if (willPositionNextNode)
-                {
-                    int childBottomY = CalculateNodePositions(branch.NextNodeId, branchCenterX, nextY, visited, subtreeWidths);
-                    maxBottomY = Math.Max(maxBottomY, childBottomY);
-
-                    if (nodePositions.ContainsKey(branch.NextNodeId))
-                    {
-                        connections.Add((nodePositions[choiceKey], nodePositions[branch.NextNodeId], null));
-                    }
-                }
-                else
-                {
-                    if (nodePositions.ContainsKey(branch.NextNodeId))
-                    {
-                        connections.Add((nodePositions[choiceKey], nodePositions[branch.NextNodeId], null));
-                    }
-                }
+                bool willPosition = !visited.Contains(b.NextNodeId);
+                if (willPosition)
+                { int childBottomY = CalculateNodePositions(b.NextNodeId, branchCenterX, nextY, visited, subtreeWidths); maxBottomY = Math.Max(maxBottomY, childBottomY); if (nodePositions.ContainsKey(b.NextNodeId)) connections.Add((nodePositions[choiceKey], nodePositions[b.NextNodeId], null)); }
+                else { if (nodePositions.ContainsKey(b.NextNodeId)) connections.Add((nodePositions[choiceKey], nodePositions[b.NextNodeId], null)); }
             }
-
-            // Move to next branch position with generous spacing
-            currentX += branchWidth + 250; // Add spacing between branches
+            currentX += branchWidth + 250;
         }
-
-        return maxBottomY + 100; // Add extra spacing at bottom
+        return maxBottomY + 100;
     }
-
-    private RenderFragment RenderFlowchart() => builder =>
-    {
-        if (!layoutCalculated)
-        {
-            CalculateFlowchartLayout();
-        }
-
-        foreach (var pos in nodePositions.Values)
-        {
-            if (pos.IsChoice)
-            {
-                builder.OpenElement(0, "div");
-                builder.AddAttribute(1, "class", "flowchart-node choice-node");
-                builder.AddAttribute(2, "style", $"left: {pos.X}px; top: {pos.Y}px; width: {pos.Width}px;");
-                builder.AddContent(3, pos.ChoiceLabel);
-                builder.CloseElement();
-            }
-            else
-            {
-                builder.AddContent(4, RenderFlowchartNode(pos));
-            }
-        }
-    };
-
-    private RenderFragment RenderFlowchartNode(NodePosition pos) => builder =>
-    {
-        var node = nodes.FirstOrDefault(n => n.Id == pos.NodeId);
-        if (node == null) return;
-
-        builder.OpenElement(0, "div");
-        builder.AddAttribute(1, "class", $"flowchart-node {(node.Id == startNodeId ? "start-node" : "")} {(node.Type == "End" ? "end-node" : "")}");
-        builder.AddAttribute(2, "style", $"left: {pos.X}px; top: {pos.Y}px; width: {pos.Width}px;");
-        builder.AddAttribute(3, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
-        builder.AddAttribute(4, "data-node-id", node.Id); // attribute for JS lookup
-
-        // Node header
-        builder.OpenElement(5, "div");
-        builder.AddAttribute(6, "class", "node-header");
-
-        builder.OpenElement(7, "div");
-        builder.AddAttribute(8, "class", "node-info");
-        // Node name/ID in top left
-        builder.OpenElement(9, "span");
-        builder.AddAttribute(10, "class", "node-name");
-        builder.AddAttribute(11, "style", "font-weight: 600; font-size: 12px; margin-right: 8px;");
-        builder.AddContent(12, node.Id);
-        builder.CloseElement();
-        builder.OpenElement(13, "span");
-        builder.AddAttribute(14, "class", $"badge bg-{GetNodeTypeBadge(node.Type)}");
-        builder.AddAttribute(15, "style", "font-size: 10px;");
-        builder.AddContent(16, node.Type);
-        builder.CloseElement();
-        if (node.Id == startNodeId)
-        {
-            builder.OpenElement(17, "span");
-            builder.AddAttribute(18, "class", "badge bg-success");
-            builder.AddAttribute(19, "style", "font-size: 10px;");
-            builder.AddContent(20, "START");
-            builder.CloseElement();
-        }
-        builder.CloseElement();
-
-        // Actions
-        builder.OpenElement(21, "div");
-        builder.AddAttribute(22, "class", "node-actions");
-        builder.OpenElement(23, "button");
-        builder.AddAttribute(24, "class", "btn btn-sm btn-primary");
-        builder.AddAttribute(25, "onclick", EventCallback.Factory.Create(this, () => EditNode(node)));
-        builder.AddAttribute(26, "style", "padding: 2px 6px; font-size: 12px;");
-        builder.OpenElement(27, "i");
-        builder.AddAttribute(28, "class", "bi bi-pencil");
-        builder.CloseElement();
-        builder.CloseElement();
-        builder.OpenElement(29, "button");
-        builder.AddAttribute(30, "class", "btn btn-sm btn-danger");
-        builder.AddAttribute(31, "onclick", EventCallback.Factory.Create(this, () => DeleteNode(node)));
-        builder.AddAttribute(32, "style", "padding: 2px 6px; font-size: 12px;");
-        builder.OpenElement(33, "i");
-        builder.AddAttribute(34, "class", "bi bi-trash");
-        builder.CloseElement();
-        builder.CloseElement();
-        builder.CloseElement();
-
-        builder.CloseElement(); // node-header
-
-        // Node prompt
-        builder.OpenElement(35, "div");
-        builder.AddAttribute(36, "class", "node-prompt");
-        builder.AddContent(37, node.Prompt);
-        builder.CloseElement();
-
-        builder.CloseElement(); // flowchart-node
-    };
-
-    private RenderFragment RenderConnectors() => builder =>
-    {
-        if (!layoutCalculated)
-        {
-            CalculateFlowchartLayout();
-        }
-
-        // Define arrowhead marker first
-        builder.OpenElement(0, "defs");
-        builder.OpenElement(1, "marker");
-        builder.AddAttribute(2, "id", "arrowhead");
-        builder.AddAttribute(3, "markerWidth", "10");
-        builder.AddAttribute(4, "markerHeight", "10");
-        builder.AddAttribute(5, "refX", "9");
-        builder.AddAttribute(6, "refY", "3");
-        builder.AddAttribute(7, "orient", "auto");
-        builder.OpenElement(8, "polygon");
-        builder.AddAttribute(9, "points", "0 0, 10 3, 0 6");
-        builder.AddAttribute(10, "fill", "#495057");
-        builder.CloseElement();
-        builder.CloseElement();
-        builder.CloseElement();
-
-        // Group connections by target to detect overlaps
-        var targetGroups = connections.GroupBy(c => c.to.NodeId).ToList();
-        var connectionOffsets = new Dictionary<(NodePosition from, NodePosition to), int>();
-        
-        foreach (var group in targetGroups)
-        {
-            var connectionsToTarget = group.ToList();
-            if (connectionsToTarget.Count > 1)
-            {
-                // Multiple connections to same target - add offsets
-                int offsetStep = 30; // Horizontal offset between lines
-                int startOffset = -(connectionsToTarget.Count - 1) * offsetStep / 2;
-                
-                for (int i = 0; i < connectionsToTarget.Count; i++)
-                {
-                    var conn = connectionsToTarget[i];
-                    connectionOffsets[(conn.from, conn.to)] = startOffset + (i * offsetStep);
-                }
-            }
-        }
-
-        foreach (var (from, to, label) in connections)
-        {
-            // Calculate connection points
-            int fromCenterX = from.X + (from.Width / 2);
-            int fromBottom = from.Y + from.Height;
-            int toCenterX = to.X + (to.Width / 2);
-            int toTop = to.Y;
-
-            // Apply horizontal offset if this connection needs it
-            int horizontalOffset = 0;
-            if (connectionOffsets.TryGetValue((from, to), out int offset))
-            {
-                horizontalOffset = offset;
-                toCenterX += horizontalOffset;
-            }
-
-            // Always drop down from source node first before routing
-            int dropDownAmount = 30; // Minimum drop down from source node
-            int approachAmount = 30; // Minimum approach distance above target node
-            
-            int exitY = fromBottom + dropDownAmount; // Where line exits source (going down)
-            int approachY = toTop - approachAmount; // Where line approaches target (from above)
-
-            // Draw straight or angled line
-            if (Math.Abs(fromCenterX - toCenterX) < 10 && horizontalOffset == 0 && exitY < approachY)
-            {
-                // Straight line (only if no offset, going downward, and enough space)
-                builder.OpenElement(11, "line");
-                builder.AddAttribute(12, "x1", fromCenterX);
-                builder.AddAttribute(13, "y1", fromBottom);
-                builder.AddAttribute(14, "x2", toCenterX);
-                builder.AddAttribute(15, "y2", toTop);
-                builder.AddAttribute(16, "stroke", "#495057");
-                builder.AddAttribute(17, "stroke-width", "2");
-                builder.AddAttribute(18, "marker-end", "url(#arrowhead)");
-                builder.CloseElement();
-            }
-            else
-            {
-                // Angled path following the rules:
-                // 1. Exit from bottom, go down
-                // 2. Route horizontally (partway for backward refs)
-                // 3. Approach from above, go down to top
-                
-                string path;
-                if (exitY < approachY)
-                {
-                    // Normal flow: exit point is above approach point
-                    // Use a routing Y between exit and approach
-                    int routingY = (exitY + approachY) / 2;
-                    path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {toCenterX} {routingY} L {toCenterX} {toTop}";
-                }
-                else
-                {
-                    // Complex flow: need to route around (backward/upward connection)
-                    // Path: down from source -> horizontal partway -> up to approach level -> horizontal to target -> down to target
-                    int routingY = exitY + 20; // Go down a bit more for clearance
-                    
-                    // Calculate intermediate X position (don't go all the way to target at lower level)
-                    // Go about 70% of the way horizontally before going up
-                    int horizontalDistance = toCenterX - fromCenterX;
-                    int intermediateX = fromCenterX + (int)(horizontalDistance * 0.7);
-                    
-                    // 5-segment path to avoid going through target node
-                    path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {intermediateX} {routingY} L {intermediateX} {approachY} L {toCenterX} {approachY} L {toCenterX} {toTop}";
-                }
-
-                builder.OpenElement(19, "path");
-                builder.AddAttribute(20, "d", path);
-                builder.AddAttribute(21, "stroke", "#495057");
-                builder.AddAttribute(22, "stroke-width", "2");
-                builder.AddAttribute(23, "fill", "none");
-                builder.AddAttribute(24, "marker-end", "url(#arrowhead)");
-                builder.CloseElement();
-            }
-        }
-    };
 
     private List<(string Label, string NextNodeId)> GetNodeBranches(DecisionNode node)
     {
-        var branches = new List<(string Label, string NextNodeId)>();
-
-        if (node.Type == "SingleChoice" && node.Choices != null)
-        {
-            foreach (var choice in node.Choices)
-            {
-                branches.Add((choice.Label, choice.NextNodeId ?? ""));
-            }
-        }
-        else if (node.Type == "Number" && node.Rules != null)
-        {
-            foreach (var rule in node.Rules)
-            {
-                branches.Add(($"{rule.Operator} {rule.Value}", rule.NextNodeId ?? ""));
-            }
-        }
-        // Text nodes are handled directly in CalculateNodePositions, no branches needed
-
-        return branches;
+        var list = new List<(string Label, string NextNodeId)>();
+        if (node.Type == "SingleChoice" && node.Choices != null) foreach (var c in node.Choices) list.Add((c.Label, c.NextNodeId ?? ""));
+        else if (node.Type == "Number" && node.Rules != null) foreach (var r in node.Rules) list.Add(($"{r.Operator} {r.Value}", r.NextNodeId ?? ""));
+        return list;
     }
 
-    private void LoadExampleTree()
-    {
-        // Example now matches default repo rules.json so round-trip save/load is stable
-        treeId = "essence-triage-demo";
-        treeVersion = "1.0.0";
-        startNodeId = "q_greeting";
-        nodes = new List<DecisionNode>
-        {
-            new DecisionNode
-            {
-                Id = "q_greeting",
-                Type = "SingleChoice",
-                Prompt = "Welcome to Essence of Oregon support. What brings you here today?",
-                Choices = new List<Choice>
-                {
-                    new Choice { Key = "cancel", Label = "I want to cancel my subscription", NextNodeId = "q_reason" },
-                    new Choice { Key = "other", Label = "Something else", NextNodeId = "end_other" }
-                }
-            },
-            new DecisionNode
-            {
-                Id = "q_reason",
-                Type = "SingleChoice",
-                Prompt = "What is the main reason for canceling?",
-                Choices = new List<Choice>
-                {
-                    new Choice { Key = "affordability", Label = "It's too expensive", NextNodeId = "q_usage" },
-                    new Choice { Key = "dont_like", Label = "I didn't like the product", NextNodeId = "end_cancelled" },
-                    new Choice { Key = "other", Label = "Other reason", NextNodeId = "end_escalate" }
-                }
-            },
-            new DecisionNode
-            {
-                Id = "q_usage",
-                Type = "SingleChoice",
-                Prompt = "Have you had a chance to use the product enough to see results?",
-                Choices = new List<Choice>
-                {
-                    new Choice { Key = "yes", Label = "Yes", NextNodeId = "q_discount40" },
-                    new Choice { Key = "no", Label = "Not really", NextNodeId = "q_extend_offer" }
-                }
-            },
-            new DecisionNode
-            {
-                Id = "q_extend_offer",
-                Type = "SingleChoice",
-                Prompt = "We can extend your free trial by 15 days at no charge so you can evaluate further. Would you like to accept the extension?",
-                Choices = new List<Choice>
-                {
-                    new Choice { Key = "accept", Label = "Yes, extend my free trial", NextNodeId = "end_extended" },
-                    new Choice { Key = "decline", Label = "No, I'd still like to cancel", NextNodeId = "end_cancelled" }
-                }
-            },
-            new DecisionNode
-            {
-                Id = "q_discount40",
-                Type = "SingleChoice",
-                Prompt = "We can offer a lifetime 40% employee discount. Keep the subscription for $50.28/month (from $83.80)?",
-                Choices = new List<Choice>
-                {
-                    new Choice { Key = "accept", Label = "Accept $50.28/month", NextNodeId = "end_keep40" },
-                    new Choice { Key = "decline", Label = "Still can't afford it", NextNodeId = "q_affordable_price" }
-                }
-            },
-            new DecisionNode
-            {
-                Id = "q_affordable_price",
-                Type = "Number",
-                Prompt = "What monthly price (USD) would make it affordable for you?",
-                Rules = new List<Rule>
-                {
-                    new Rule { Operator = "GreaterOrEqual", Value = "30", NextNodeId = "end_supervisor_80" },
-                    new Rule { Operator = "LessThan", Value = "30", NextNodeId = "end_cancelled" }
-                }
-            },
-            new DecisionNode { Id = "end_extended", Type = "End", Prompt = "Your free trial has been extended by 15 days. Please evaluate and contact us before it ends if you still wish to cancel." },
-            new DecisionNode { Id = "end_keep40", Type = "End", Prompt = "Great! Your subscription will continue at the 40% discounted rate of $50.28/month." },
-            new DecisionNode { Id = "end_supervisor_80", Type = "End", Prompt = "Approved by supervisor: lifetime discount. Your monthly price will be $30." },
-            new DecisionNode { Id = "end_cancelled", Type = "End", Prompt = "Understood. Your subscription is canceled. Thank you for trying Essence of Oregon." },
-            new DecisionNode { Id = "end_escalate", Type = "End", Prompt = "Thanks for the feedback. A specialist will review and follow up regarding your cancellation request." },
-            new DecisionNode { Id = "end_other", Type = "End", Prompt = "Thanks for reaching out. Please contact support for assistance with non-cancellation inquiries." }
-        };
-        renderedNodes.Clear();
-        layoutCalculated = false;
-        if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true; // ensure scroll after example load
-    }
-
-    private void AddNodeAtPosition(string? parentNodeId, string? branchLabel)
-    {
-        var newNode = new DecisionNode
-        {
-            Id = $"node_{nodes.Count + 1}",
-            Type = "End",
-            Prompt = "Enter your prompt here"
-        };
-        nodes.Add(newNode);
-        
-        if (parentNodeId != null)
-        {
-            var parentNode = nodes.FirstOrDefault(n => n.Id == parentNodeId);
-            if (parentNode != null)
-            {
-                if (parentNode.Type == "SingleChoice")
-                {
-                    var choice = parentNode.Choices?.FirstOrDefault(c => c.Label == branchLabel);
-                    if (choice != null)
-                    {
-                        choice.NextNodeId = newNode.Id;
-                    }
-                }
-                else if (parentNode.Type == "Number")
-                {
-                    var rule = parentNode.Rules?.FirstOrDefault(r => $"{r.Operator} {r.Value}" == branchLabel);
-                    if (rule != null)
-                    {
-                        rule.NextNodeId = newNode.Id;
-                    }
-                }
-            }
-        }
-        else if (string.IsNullOrEmpty(startNodeId))
-        {
-            startNodeId = newNode.Id;
-        }
-        
-        editingNode = newNode;
-        renderedNodes.Clear();
-        layoutCalculated = false;
-        CalculateFlowchartLayout();
-        if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
-    }
-
-    private void EditNode(DecisionNode node)
-    {
-        editingNode = node;
-    }
-
-    private void CloseEditModal()
-    {
-        editingNode = null;
-        renderedNodes.Clear();
-    }
+    private void EditNode(DecisionNode node) => editingNode = node;
+    private void CloseEditModal() { editingNode = null; renderedNodes.Clear(); }
 
     private void SaveEditedNode()
     {
         if (editingNode != null)
         {
-            // Process SingleChoice nodes - create new nodes for "_new_" selections
+            if (editingNode.Type == "End") { editingNode.Prompt = string.Empty; editingNode.Choices = null; editingNode.Rules = null; editingNode.DefaultNextNodeId = null; }
             if (editingNode.Type == "SingleChoice" && editingNode.Choices != null)
             {
-                foreach (var choice in editingNode.Choices)
-                {
-                    if (choice.NextNodeId == "_new_")
-                    {
-                        var newNode = new DecisionNode
-                        {
-                            Id = $"node_{nodes.Count + 1}",
-                            Type = "End",
-                            Prompt = "Enter your prompt here"
-                        };
-                        nodes.Add(newNode);
-                        choice.NextNodeId = newNode.Id;
-                    }
-                }
+                foreach (var choice in editingNode.Choices.Where(c => c.NextNodeId == "_new_"))
+                { var newNode = new DecisionNode { Id = $"node_{nodes.Count + 1}", Type = "End", Prompt = string.Empty }; nodes.Add(newNode); choice.NextNodeId = newNode.Id; }
             }
-
-            // Process Number nodes - create new nodes for "_new_" selections
             if (editingNode.Type == "Number" && editingNode.Rules != null)
             {
-                foreach (var rule in editingNode.Rules)
-                {
-                    if (rule.NextNodeId == "_new_")
-                    {
-                        var newNode = new DecisionNode
-                        {
-                            Id = $"node_{nodes.Count + 1}",
-                            Type = "End",
-                            Prompt = "Enter your prompt here"
-                        };
-                        nodes.Add(newNode);
-                        rule.NextNodeId = newNode.Id;
-                    }
-                }
+                foreach (var rule in editingNode.Rules.Where(r => r.NextNodeId == "_new_"))
+                { var newNode = new DecisionNode { Id = $"node_{nodes.Count + 1}", Type = "End", Prompt = string.Empty }; nodes.Add(newNode); rule.NextNodeId = newNode.Id; }
             }
-
-            // Process Text nodes - create new node for "_new_" selection
             if (editingNode.Type == "Text" && editingNode.DefaultNextNodeId == "_new_")
-            {
-                var newNode = new DecisionNode
-                {
-                    Id = $"node_{nodes.Count + 1}",
-                    Type = "End",
-                    Prompt = "Enter your prompt here"
-                };
-                nodes.Add(newNode);
-                editingNode.DefaultNextNodeId = newNode.Id;
-            }
+            { var newNode = new DecisionNode { Id = $"node_{nodes.Count + 1}", Type = "End", Prompt = string.Empty }; nodes.Add(newNode); editingNode.DefaultNextNodeId = newNode.Id; }
         }
-
-        editingNode = null;
-        renderedNodes.Clear();
-        layoutCalculated = false;
-        CalculateFlowchartLayout();
+        editingNode = null; renderedNodes.Clear(); layoutCalculated = false; CalculateFlowchartLayout();
     }
 
     private void DeleteNode(DecisionNode node)
     {
-        nodes.Remove(node);
-        if (startNodeId == node.Id)
-        {
-            startNodeId = nodes.Any() ? nodes.First().Id : "";
-        }
-        
-        // Remove references to this node
+        nodes.Remove(node); if (startNodeId == node.Id) startNodeId = nodes.Any() ? nodes.First().Id : "";
         foreach (var n in nodes)
         {
-            if (n.Choices != null)
+            if (n.Choices != null) foreach (var ch in n.Choices.Where(c => c.NextNodeId == node.Id)) ch.NextNodeId = "";
+            if (n.Rules != null) foreach (var rl in n.Rules.Where(r => r.NextNodeId == node.Id)) rl.NextNodeId = "";
+        }
+        renderedNodes.Clear(); layoutCalculated = false; CalculateFlowchartLayout(); if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
+    }
+
+    private void AddNodeAtPosition(string? parentNodeId, string? branchLabel)
+    {
+        var newNode = new DecisionNode { Id = $"node_{nodes.Count + 1}", Type = "End", Prompt = string.Empty }; nodes.Add(newNode);
+        if (parentNodeId != null)
+        {
+            var parent = nodes.FirstOrDefault(n => n.Id == parentNodeId);
+            if (parent != null)
             {
-                foreach (var choice in n.Choices)
+                if (parent.Type == "SingleChoice" && parent.Choices != null)
                 {
-                    if (choice.NextNodeId == node.Id)
-                        choice.NextNodeId = "";
+                    var ch = parent.Choices.FirstOrDefault(c => c.Label == branchLabel);
+                    if (ch != null) ch.NextNodeId = newNode.Id;
+                }
+                else if (parent.Type == "Number" && parent.Rules != null)
+                {
+                    var rl = parent.Rules.FirstOrDefault(r => $"{r.Operator} {r.Value}" == branchLabel);
+                    if (rl != null) rl.NextNodeId = newNode.Id;
                 }
             }
-            if (n.Rules != null)
-            {
-                foreach (var rule in n.Rules)
-                {
-                    if (rule.NextNodeId == node.Id)
-                        rule.NextNodeId = "";
-                }
-            }
         }
-        
-        renderedNodes.Clear();
-        layoutCalculated = false;
-        CalculateFlowchartLayout();
-        if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
+        else if (string.IsNullOrEmpty(startNodeId)) startNodeId = newNode.Id;
+        editingNode = newNode; renderedNodes.Clear(); layoutCalculated = false; CalculateFlowchartLayout(); if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
     }
 
-    private void AddChoice()
-    {
-        if (editingNode != null)
-        {
-            editingNode.Choices ??= new List<Choice>();
-            editingNode.Choices.Add(new Choice 
-            { 
-                Key = $"choice{editingNode.Choices.Count + 1}",
-                Label = "New Choice",
-                NextNodeId = ""
-            });
-        }
-    }
+    private void AddChoice() { if (editingNode != null) { editingNode.Choices ??= new List<Choice>(); editingNode.Choices.Add(new Choice { Key = $"choice{editingNode.Choices.Count + 1}", Label = "New Choice", NextNodeId = "" }); } }
+    private void RemoveChoice(int i) { if (editingNode?.Choices != null && i < editingNode.Choices.Count) { editingNode.Choices.RemoveAt(i); layoutCalculated = false; CalculateFlowchartLayout(); } }
+    private void AddRule() { if (editingNode != null) { editingNode.Rules ??= new List<Rule>(); editingNode.Rules.Add(new Rule { Operator = "LessThan", Value = "0", NextNodeId = "" }); } }
+    private void RemoveRule(int i) { if (editingNode?.Rules != null && i < editingNode.Rules.Count) { editingNode.Rules.RemoveAt(i); layoutCalculated = false; CalculateFlowchartLayout(); } }
 
-    private void RemoveChoice(int index)
-    {
-        if (editingNode?.Choices != null && index < editingNode.Choices.Count)
-        {
-            editingNode.Choices.RemoveAt(index);
-            layoutCalculated = false;
-            CalculateFlowchartLayout();
-        }
-    }
-
-    private void AddRule()
-    {
-        if (editingNode != null)
-        {
-            editingNode.Rules ??= new List<Rule>();
-            editingNode.Rules.Add(new Rule 
-            { 
-                Operator = "LessThan",
-                Value = "0",
-                NextNodeId = ""
-            });
-        }
-    }
-
-    private void RemoveRule(int index)
-    {
-        if (editingNode?.Rules != null && index < editingNode.Rules.Count)
-        {
-            editingNode.Rules.RemoveAt(index);
-            layoutCalculated = false;
-            CalculateFlowchartLayout();
-        }
-    }
-
-    private void NewTree()
-    {
-        treeId = "new-tree";
-        treeVersion = "1.0.0";
-        startNodeId = "";
-        nodes.Clear();
-        editingNode = null;
-        statusMessage = ""; // silently clear
-        renderedNodes.Clear();
-        layoutCalculated = false;
-        CalculateFlowchartLayout();
-    }
+    private void NewTree() { treeId = "new-tree"; treeVersion = "1.0.0"; startNodeId = ""; nodes.Clear(); editingNode = null; statusMessage = string.Empty; renderedNodes.Clear(); layoutCalculated = false; CalculateFlowchartLayout(); }
 
     private async Task LoadFile(InputFileChangeEventArgs e)
     {
         try
         {
-            var file = e.File;
-            if (file == null) return;
-
-            using var stream = file.OpenReadStream(maxAllowedSize: 1024 * 1024);
-            using var reader = new StreamReader(stream);
-            var json = await reader.ReadToEndAsync();
-            
+            var file = e.File; if (file == null) return; using var stream = file.OpenReadStream(1024 * 1024); using var reader = new StreamReader(stream); var json = await reader.ReadToEndAsync();
             var result = TreeService.LoadFromJson(json);
             if (result.Success && result.Tree != null)
             {
-                treeId = result.Tree.Id;
-                treeVersion = result.Tree.Version;
-                startNodeId = result.Tree.StartNodeId;
-                nodes = result.Tree.Nodes.Values.ToList();
-                editingNode = null;
-                ShowStatus("Tree loaded successfully!", true);
-                renderedNodes.Clear();
-                layoutCalculated = false;
-                CalculateFlowchartLayout();
-                if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
+                treeId = result.Tree.Id; treeVersion = result.Tree.Version; startNodeId = result.Tree.StartNodeId; nodes = result.Tree.Nodes.Values.ToList();
+                foreach (var n in nodes.Where(n => string.Equals(n.Type, "End", StringComparison.OrdinalIgnoreCase))) n.Prompt = string.Empty;
+                editingNode = null; ShowStatus("Tree loaded successfully!", true); renderedNodes.Clear(); layoutCalculated = false; CalculateFlowchartLayout(); if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
             }
-            else
-            {
-                ShowStatus($"Error loading tree: {result.ErrorMessage}", false);
-            }
+            else ShowStatus($"Error loading tree: {result.ErrorMessage}", false);
         }
-        catch (Exception ex)
-        {
-            ShowStatus($"Error loading file: {ex.Message}", false);
-        }
+        catch (Exception ex) { ShowStatus($"Error loading file: {ex.Message}", false); }
     }
 
     private async Task SaveTree()
     {
         try
         {
-            var tree = new DecisionTree
-            {
-                Id = treeId,
-                Version = treeVersion,
-                StartNodeId = startNodeId,
-                Nodes = nodes.ToDictionary(n => n.Id, n => n)
-            };
-
-            var json = TreeService.SerializeToJson(tree);
-            var result = TreeService.LoadFromJson(json);
-            
+            foreach (var n in nodes.Where(n => string.Equals(n.Type, "End", StringComparison.OrdinalIgnoreCase))) n.Prompt = string.Empty;
+            var tree = new DecisionTree { Id = treeId, Version = treeVersion, StartNodeId = startNodeId, Nodes = nodes.ToDictionary(n => n.Id, n => n) };
+            var json = TreeService.SerializeToJson(tree); var result = TreeService.LoadFromJson(json);
             if (result.Success)
             {
-                // Download the file to user's PC
                 if (downloadModule != null)
-                {
-                    var filename = $"{treeId}.json";
-                    var success = await downloadModule.InvokeAsync<bool>("downloadJsonFile", filename, json);
-                    if (success)
-                    {
-                        ShowStatus($"✓ Tree downloaded as {filename}", true);
-                    }
-                    else
-                    {
-                        ShowStatus("Error downloading file", false);
-                    }
-                }
-                else
-                {
-                    ShowStatus("Download module not loaded", false);
-                }
+                { var filename = $"{treeId}.json"; var success = await downloadModule.InvokeAsync<bool>("downloadJsonFile", filename, json); ShowStatus(success ? $"✓ Tree downloaded as {filename}" : "Error downloading file", success); }
+                else ShowStatus("Download module not loaded", false);
             }
-            else
-            {
-                ShowStatus($"Validation failed: {result.ErrorMessage}", false);
-            }
+            else ShowStatus($"Validation failed: {result.ErrorMessage}", false);
         }
-        catch (Exception ex)
-        {
-            ShowStatus($"Error: {ex.Message}", false);
-        }
+        catch (Exception ex) { ShowStatus($"Error: {ex.Message}", false); }
     }
 
-    private string GetNodeTypeBadge(string type) => type switch
-    {
-        "End" => "danger",
-        "SingleChoice" => "primary",
-        "Number" => "warning",
-        "Text" => "info",
-        _ => "secondary"
-    };
+    private string GetNodeTypeBadge(string type) => type switch { "End" => "danger", "SingleChoice" => "primary", "Number" => "warning", "Text" => "info", _ => "secondary" };
 
     private void ShowStatus(string message, bool success)
-    {
-        statusMessage = message;
-        isSuccess = success;
-        var version = ++statusMessageVersion;
-        // Auto-dismiss after 5 seconds
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(5000);
-            if (version == statusMessageVersion)
-            {
-                try
-                {
-                    await InvokeAsync(() => { statusMessage = string.Empty; StateHasChanged(); });
-                }
-                catch { }
-            }
-        });
-        StateHasChanged();
-    }
-
-    private void DismissStatus()
-    {
-        statusMessageVersion++; // invalidate any pending auto-dismiss for prior message
-        statusMessage = string.Empty;
-    }
+    { statusMessage = message; isSuccess = success; var version = ++statusMessageVersion; _ = Task.Run(async () => { await Task.Delay(5000); if (version == statusMessageVersion) { try { await InvokeAsync(() => { statusMessage = string.Empty; StateHasChanged(); }); } catch { } } }); StateHasChanged(); }
+    private void DismissStatus() { statusMessageVersion++; statusMessage = string.Empty; }
 }

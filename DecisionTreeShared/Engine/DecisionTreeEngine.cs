@@ -10,6 +10,10 @@ namespace DecisionTreeShared.Engine
     {
         private DecisionTree _tree = null!;
 
+        // Helper to compare node types case-insensitively
+        private static bool IsType(DecisionNode node, string type) =>
+            string.Equals(node.Type, type, StringComparison.OrdinalIgnoreCase);
+
         /// <summary>
         /// Loads and validates a decision tree from a JSON file
         /// </summary>
@@ -123,7 +127,7 @@ namespace DecisionTreeShared.Engine
                 }
 
                 // End nodes don't have cycles
-                if (node.Type == "End")
+                if (IsType(node, "End"))
                 {
                     visited.Add(nodeId);
                     return false;
@@ -231,16 +235,24 @@ namespace DecisionTreeShared.Engine
 
         /// <summary>
         /// Determines the next node based on the current node and the AI's response
+        /// Supports node types (case-insensitive): End, SingleChoice, Number, Text
+        /// Text nodes simply advance using defaultNextNodeId.
         /// </summary>
         public string? GetNextNodeId(DecisionNode currentNode, string aiResponse)
         {
-            if (currentNode.Type == "End")
+            if (IsType(currentNode, "End"))
             {
                 return null;
             }
 
+            // For Text nodes (free-form input, no branching rules other than default)
+            if (IsType(currentNode, "Text"))
+            {
+                return currentNode.DefaultNextNodeId; // allow null if not set
+            }
+
             // For SingleChoice nodes
-            if (currentNode.Type == "SingleChoice" && currentNode.Choices != null)
+            if (IsType(currentNode, "SingleChoice") && currentNode.Choices != null)
             {
                 // Try to find a matching choice by key or label (case-insensitive)
                 var normalizedResponse = aiResponse.Trim().ToLowerInvariant();
@@ -261,7 +273,7 @@ namespace DecisionTreeShared.Engine
             }
 
             // For Number nodes
-            if (currentNode.Type == "Number" && currentNode.Rules != null)
+            if (IsType(currentNode, "Number") && currentNode.Rules != null)
             {
                 // Try to extract a number from the response
                 if (TryExtractNumber(aiResponse, out var number))
@@ -293,6 +305,7 @@ namespace DecisionTreeShared.Engine
                 return currentNode.DefaultNextNodeId;
             }
 
+            // Fallback for any other node type
             return currentNode.DefaultNextNodeId;
         }
 
