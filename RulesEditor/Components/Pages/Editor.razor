@@ -74,8 +74,8 @@
 
 @if (editingNode != null)
 {
-    <div class="edit-modal" @onclick="CloseEditModal">
-        <div class="edit-modal-content" @onclick:stopPropagation="true">
+    <div class="edit-modal">
+        <div class="edit-modal-content">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h5 class="mb-0">Edit Node</h5>
                 <button class="btn-close" @onclick="CloseEditModal"></button>
@@ -124,8 +124,20 @@
                                             <i class="bi bi-x"></i>
                                         </button>
                                     </div>
-                                    <input type="text" class="form-control form-control-sm mb-1" placeholder="Key" @bind="choice.Key" />
-                                    <input type="text" class="form-control form-control-sm mb-1" placeholder="Label" @bind="choice.Label" />
+                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
+                                        <strong>Key</strong> 
+                                        <span class="text-muted" title="Unique identifier used internally for this choice">ℹ️</span>
+                                    </label>
+                                    <input type="text" class="form-control form-control-sm mb-2" placeholder="e.g., yes, no, option1" @bind="choice.Key" />
+                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
+                                        <strong>Label</strong> 
+                                        <span class="text-muted" title="User-friendly text shown for this choice">ℹ️</span>
+                                    </label>
+                                    <input type="text" class="form-control form-control-sm mb-2" placeholder="e.g., Yes, No, First Option" @bind="choice.Label" />
+                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
+                                        <strong>Next Node</strong>
+                                        <span class="text-muted" title="Which node to go to when this choice is selected">ℹ️</span>
+                                    </label>
                                     <select class="form-select form-select-sm" @bind="choice.NextNodeId">
                                         <option value="">-- Select Next Node --</option>
                                         @foreach (var node in nodes.Where(n => n.Id != editingNode.Id))
@@ -165,14 +177,26 @@
                                             <i class="bi bi-x"></i>
                                         </button>
                                     </div>
-                                    <select class="form-select form-select-sm mb-1" @bind="rule.Operator">
+                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
+                                        <strong>Operator</strong>
+                                        <span class="text-muted" title="Comparison operation to apply">ℹ️</span>
+                                    </label>
+                                    <select class="form-select form-select-sm mb-2" @bind="rule.Operator">
                                         <option value="LessThan">Less Than (&lt;)</option>
                                         <option value="LessThanOrEqual">Less Than or Equal (&lt;=)</option>
                                         <option value="GreaterThan">Greater Than (&gt;)</option>
                                         <option value="GreaterOrEqual">Greater Than or Equal (&gt;=)</option>
                                         <option value="Equal">Equal (=)</option>
                                     </select>
-                                    <input type="number" class="form-control form-control-sm mb-1" placeholder="Value" @bind="rule.Value" />
+                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
+                                        <strong>Value</strong>
+                                        <span class="text-muted" title="Numeric threshold to compare against">ℹ️</span>
+                                    </label>
+                                    <input type="number" class="form-control form-control-sm mb-2" placeholder="e.g., 100, 30, 0" @bind="rule.Value" />
+                                    <label class="form-label form-label-sm mb-1" style="font-size: 0.85rem;">
+                                        <strong>Next Node</strong>
+                                        <span class="text-muted" title="Which node to go to when this rule matches">ℹ️</span>
+                                    </label>
                                     <select class="form-select form-select-sm" @bind="rule.NextNodeId">
                                         <option value="">-- Select Next Node --</option>
                                         @foreach (var node in nodes.Where(n => n.Id != editingNode.Id))
@@ -731,6 +755,47 @@
 
     private void SaveEditedNode()
     {
+        if (editingNode != null)
+        {
+            // Process SingleChoice nodes - create new nodes for "_new_" selections
+            if (editingNode.Type == "SingleChoice" && editingNode.Choices != null)
+            {
+                foreach (var choice in editingNode.Choices)
+                {
+                    if (choice.NextNodeId == "_new_")
+                    {
+                        var newNode = new DecisionNode
+                        {
+                            Id = $"node_{nodes.Count + 1}",
+                            Type = "End",
+                            Prompt = "Enter your prompt here"
+                        };
+                        nodes.Add(newNode);
+                        choice.NextNodeId = newNode.Id;
+                    }
+                }
+            }
+
+            // Process Number nodes - create new nodes for "_new_" selections
+            if (editingNode.Type == "Number" && editingNode.Rules != null)
+            {
+                foreach (var rule in editingNode.Rules)
+                {
+                    if (rule.NextNodeId == "_new_")
+                    {
+                        var newNode = new DecisionNode
+                        {
+                            Id = $"node_{nodes.Count + 1}",
+                            Type = "End",
+                            Prompt = "Enter your prompt here"
+                        };
+                        nodes.Add(newNode);
+                        rule.NextNodeId = newNode.Id;
+                    }
+                }
+            }
+        }
+
         editingNode = null;
         renderedNodes.Clear();
         layoutCalculated = false;
