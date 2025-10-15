@@ -384,6 +384,29 @@
         if (!branches.Any() || node.Type == "End")
             return y + 220;
 
+        // Text nodes connect directly without choice boxes
+        if (node.Type == "Text" && !string.IsNullOrEmpty(node.DefaultNextNodeId))
+        {
+            int textNextY = y + 220; // Direct connection spacing
+            if (!visited.Contains(node.DefaultNextNodeId))
+            {
+                int childBottomY = CalculateNodePositions(node.DefaultNextNodeId, x, textNextY, visited, subtreeWidths);
+                if (nodePositions.ContainsKey(node.DefaultNextNodeId))
+                {
+                    connections.Add((nodePositions[nodeId], nodePositions[node.DefaultNextNodeId], null));
+                }
+                return childBottomY;
+            }
+            else
+            {
+                if (nodePositions.ContainsKey(node.DefaultNextNodeId))
+                {
+                    connections.Add((nodePositions[nodeId], nodePositions[node.DefaultNextNodeId], null));
+                }
+                return textNextY + 100;
+            }
+        }
+
         int nextY = y + 320; // Increased vertical space for clear arrow visibility
         int choiceY = y + 160; // Space for choice boxes
 
@@ -571,6 +594,27 @@
         builder.CloseElement();
         builder.CloseElement();
 
+        // Group connections by target to detect overlaps
+        var targetGroups = connections.GroupBy(c => c.to.NodeId).ToList();
+        var connectionOffsets = new Dictionary<(NodePosition from, NodePosition to), int>();
+        
+        foreach (var group in targetGroups)
+        {
+            var connectionsToTarget = group.ToList();
+            if (connectionsToTarget.Count > 1)
+            {
+                // Multiple connections to same target - add offsets
+                int offsetStep = 30; // Horizontal offset between lines
+                int startOffset = -(connectionsToTarget.Count - 1) * offsetStep / 2;
+                
+                for (int i = 0; i < connectionsToTarget.Count; i++)
+                {
+                    var conn = connectionsToTarget[i];
+                    connectionOffsets[(conn.from, conn.to)] = startOffset + (i * offsetStep);
+                }
+            }
+        }
+
         foreach (var (from, to, label) in connections)
         {
             // Calculate connection points
@@ -579,10 +623,18 @@
             int toCenterX = to.X + (to.Width / 2);
             int toTop = to.Y;
 
-            // Draw straight or angled line
-            if (Math.Abs(fromCenterX - toCenterX) < 10)
+            // Apply horizontal offset if this connection needs it
+            int horizontalOffset = 0;
+            if (connectionOffsets.TryGetValue((from, to), out int offset))
             {
-                // Straight line
+                horizontalOffset = offset;
+                toCenterX += horizontalOffset;
+            }
+
+            // Draw straight or angled line
+            if (Math.Abs(fromCenterX - toCenterX) < 10 && horizontalOffset == 0)
+            {
+                // Straight line (only if no offset)
                 builder.OpenElement(11, "line");
                 builder.AddAttribute(12, "x1", fromCenterX);
                 builder.AddAttribute(13, "y1", fromBottom);
@@ -635,10 +687,7 @@
                 branches.Add(($"{rule.Operator} {rule.Value}", rule.NextNodeId ?? ""));
             }
         }
-        else if (node.Type == "Text" && !string.IsNullOrEmpty(node.DefaultNextNodeId))
-        {
-            branches.Add(("Next", node.DefaultNextNodeId));
-        }
+        // Text nodes are handled directly in CalculateNodePositions, no branches needed
 
         return branches;
     }
