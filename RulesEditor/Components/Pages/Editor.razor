@@ -631,10 +631,14 @@
                 toCenterX += horizontalOffset;
             }
 
+            // Always drop down from source node first before routing
+            int dropDownAmount = 40; // Minimum drop down from source node
+            int firstSegmentY = fromBottom + dropDownAmount;
+
             // Draw straight or angled line
-            if (Math.Abs(fromCenterX - toCenterX) < 10 && horizontalOffset == 0)
+            if (Math.Abs(fromCenterX - toCenterX) < 10 && horizontalOffset == 0 && fromBottom < toTop)
             {
-                // Straight line (only if no offset)
+                // Straight line (only if no offset and going downward)
                 builder.OpenElement(11, "line");
                 builder.AddAttribute(12, "x1", fromCenterX);
                 builder.AddAttribute(13, "y1", fromBottom);
@@ -647,16 +651,23 @@
             }
             else
             {
-                // Angled line with path
-                // Use a midY closer to the target to make it clear we're connecting to the input
-                int midY = toTop - 40; // Position horizontal segment just above the target node
-                // But ensure midY is between the two points for proper routing
+                // Angled line with path - always drop down first, then route
+                int midY;
                 if (fromBottom < toTop)
                 {
-                    // Connecting upward (back-reference), use midpoint
-                    midY = (fromBottom + toTop) / 2;
+                    // Normal downward flow - use point above target
+                    midY = toTop - 40;
                 }
-                string path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {midY} L {toCenterX} {midY} L {toCenterX} {toTop}";
+                else
+                {
+                    // Backward/upward reference - still drop down first, then route back up
+                    midY = Math.Max(firstSegmentY, (fromBottom + toTop) / 2);
+                }
+                
+                // Ensure we drop down from source before routing horizontally
+                int routingY = Math.Max(firstSegmentY, midY);
+                
+                string path = $"M {fromCenterX} {fromBottom} L {fromCenterX} {routingY} L {toCenterX} {routingY} L {toCenterX} {toTop}";
 
                 builder.OpenElement(19, "path");
                 builder.AddAttribute(20, "d", path);
