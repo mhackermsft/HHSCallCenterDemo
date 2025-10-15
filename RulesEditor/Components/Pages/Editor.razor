@@ -381,7 +381,7 @@
         };
 
         var branches = GetNodeBranches(node);
-        if (!branches.Any() || node.Type == "End")
+        if ((!branches.Any() && node.Type != "Text") || node.Type == "End")
             return y + 220;
 
         // Text nodes connect directly without choice boxes
