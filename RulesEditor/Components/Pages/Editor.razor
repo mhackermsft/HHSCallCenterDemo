@@ -33,13 +33,11 @@
         <div class="d-flex justify-content-between align-items-center p-3 bg-white border-bottom" style="gap:1rem;">
             <div>
                 <h3 class="mb-0">Decision Tree Flow Builder</h3>
-                <small class="text-muted">Follow the flow from top to bottom</small><br />
-                <small class="text-muted">File: @TreeService.GetDefaultRulesPath()</small>
+                <small class="text-muted">Follow the flow from top to bottom</small>
             </div>
             <div class="d-flex gap-2">
-                <button class="btn btn-success" @onclick="SaveTree"><i class="bi bi-save"></i> Save Tree</button>
+                <button class="btn btn-success" @onclick="SaveTree"><i class="bi bi-download"></i> Download Tree</button>
                 <label class="btn btn-info mb-0"><i class="bi bi-upload"></i> Load <InputFile OnChange="LoadFile" class="d-none" accept=".json" /></label>
-                <button class="btn btn-outline-secondary" @onclick="LoadDefaultFromDisk"><i class="bi bi-folder2-open"></i> Reload rules.json</button>
                 <button class="btn btn-secondary" @onclick="NewTree"><i class="bi bi-file-earmark-plus"></i> New</button>
             </div>
         </div>
@@ -58,8 +56,10 @@
             <div class="text-center py-5">
                 <i class="bi bi-diagram-3" style="font-size: 4rem; color: #6c757d;"></i>
                 <h4 class="mt-3">No Decision Tree Yet</h4>
-                <p class="text-muted">Click "New Tree" or add your first node to get started</p>
-                <button class="btn btn-primary btn-lg" @onclick="() => AddNodeAtPosition(null, null)"><i class="bi bi-plus-circle"></i> Add First Node</button>
+                <p class="text-muted">Load a JSON file or add your first node to get started</p>
+                <div class="d-flex gap-2 justify-content-center">
+                    <button class="btn btn-primary btn-lg" @onclick="() => AddNodeAtPosition(null, null)"><i class="bi bi-plus-circle"></i> Add First Node</button>
+                </div>
             </div>
         }
         else
@@ -206,34 +206,32 @@
     private bool isSuccess = false;
     private HashSet<string> renderedNodes = new();
     private bool pendingScrollToStart = false; // flag to trigger scrolling after render
-    private IJSObjectReference? module;
+    private IJSObjectReference? scrollModule;
+    private IJSObjectReference? downloadModule;
     private int statusMessageVersion = 0; // used to avoid race clearing newer messages
-
-    protected override void OnInitialized()
-    {
-        EnsureTreeLoaded();
-    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/editorScroll.js");
+            scrollModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/editorScroll.js");
+            downloadModule = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fileDownload.js");
         }
 
-        if (pendingScrollToStart && !string.IsNullOrEmpty(startNodeId) && module != null)
+        if (pendingScrollToStart && !string.IsNullOrEmpty(startNodeId) && scrollModule != null)
         {
             pendingScrollToStart = false;
             try
             {
-                await module.InvokeVoidAsync("scrollToNode", startNodeId);
+                await scrollModule.InvokeVoidAsync("scrollToNode", startNodeId);
             }
             catch { /* swallow */ }
         }
     }
 
-    private void EnsureTreeLoaded()
+    private async Task LoadDefaultFromDisk()
     {
+        await Task.Yield();
         var result = TreeService.LoadDefaultFile();
         if (result.Success && result.Tree != null)
         {
@@ -241,23 +239,17 @@
             treeVersion = result.Tree.Version;
             startNodeId = result.Tree.StartNodeId;
             nodes = result.Tree.Nodes.Values.ToList();
-            ShowStatus("Loaded rules.json", true);
+            editingNode = null;
+            ShowStatus("Loaded rules.json from server", true);
+            renderedNodes.Clear();
+            layoutCalculated = false;
+            CalculateFlowchartLayout();
+            if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true;
         }
         else
         {
-            // Seed from bundled example only if no file yet
-            LoadExampleTree();
-            ShowStatus("No existing rules.json found. Loaded example tree.", true);
+            ShowStatus($"Error loading rules.json: {result.ErrorMessage}", false);
         }
-        layoutCalculated = false;
-        CalculateFlowchartLayout();
-        if (!string.IsNullOrEmpty(startNodeId)) pendingScrollToStart = true; // request scroll
-    }
-
-    private async Task LoadDefaultFromDisk()
-    {
-        await Task.Yield();
-        EnsureTreeLoaded();
         StateHasChanged();
     }
 
@@ -877,7 +869,7 @@
         }
     }
 
-    private void SaveTree()
+    private async Task SaveTree()
     {
         try
         {
@@ -894,14 +886,23 @@
             
             if (result.Success)
             {
-                var saveResult = TreeService.SaveDefaultFile(tree);
-                if (saveResult.Success)
+                // Download the file to user's PC
+                if (downloadModule != null)
                 {
-                    ShowStatus($"\u2713 Tree saved to {TreeService.GetDefaultRulesPath()}", true);
+                    var filename = $"{treeId}.json";
+                    var success = await downloadModule.InvokeAsync<bool>("downloadJsonFile", filename, json);
+                    if (success)
+                    {
+                        ShowStatus($"✓ Tree downloaded as {filename}", true);
+                    }
+                    else
+                    {
+                        ShowStatus("Error downloading file", false);
+                    }
                 }
                 else
                 {
-                    ShowStatus($"Error saving: {saveResult.ErrorMessage}", false);
+                    ShowStatus("Download module not loaded", false);
                 }
             }
             else
